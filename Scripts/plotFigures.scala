@@ -63,22 +63,16 @@ object jointFigures {
      Tspn.plot.table$SPECIES="G. aculeatus"
      Tspn.plot.table$COCOUNTPERbp = Tspn.plot.table$COCOUNT/Tspn.plot.table$LENGTH
      
-     print("Fit first model, male as base line P.pun")
      model.9spn=lm(COCOUNT ~ LENGTH*SEXCODE,data=subset(Nspn.plot.table,CHR!="LG12"))
-     print(summary(model.9spn))
-     print("Fit first model, male as base line G.acu")
      model.3spn=lm(COCOUNT ~ LENGTH*SEXCODE,data=subset(Tspn.plot.table,CHR!="chrXIX"))
-     print(summary(model.3spn))
      
      plot.table=rbind(Nspn.plot.table,Tspn.plot.table)
      plot.table$SPECIES=factor(plot.table$SPECIES,levels=c("P. pungitius","G. aculeatus"))
-     print(coef(model.9spn))
      lm.table=data.frame(INTERCEPT = c(coef(model.9spn)[1],(coef(model.9spn)[1]+coef(model.9spn)[3]),coef(model.3spn)[1],(coef(model.3spn)[1]+coef(model.3spn)[3])),
      SLOPE= c(coef(model.9spn)[2],(coef(model.9spn)[2]+coef(model.9spn)[4]),coef(model.3spn)[2],(coef(model.3spn)[2]+coef(model.3spn)[4])),
      SEX=c("MALE","FEMALE","MALE","FEMALE") ,SPECIES=c("P. pungitius","P. pungitius","G. aculeatus","G. aculeatus"))
      lm.table$TEXT=paste0(lm.table$SPECIES,": y = ",signif(lm.table$INTERCEPT,2),"+",signif(lm.table$SLOPE,2),"*x")
      lm.table$SPECIES=factor(lm.table$SPECIES,levels=c("P. pungitius","G. aculeatus"))
-     print(lm.table)
      plot.table$COL=paste0(plot.table$SEX,":",plot.table$SPECIES)
      plot.table$COL=factor(plot.table$COL, levels=c("FEMALE:P. pungitius","FEMALE:G. aculeatus","MALE:P. pungitius","MALE:G. aculeatus"))
      lm.table$COL=paste0(lm.table$SEX,":",lm.table$SPECIES)
@@ -90,23 +84,12 @@ object jointFigures {
      scale_color_manual(values=c("tan2","tan3","steelblue2","steelblue3")) +
      scale_fill_manual(values=c("tan1","tan3","steelblue1","steelblue3"),labels = c("G. aculeatus female", "P. pungitius female","G. aculeatus male", "P. pungitius male")) +
      scale_shape_manual(values=c(21,24,21,24),labels=c("G. aculeatus female", "P. pungitius female","G. aculeatus male", "P. pungitius male")) +
-     annotate("rect",xmin=14.5*10^6,xmax=26.8*10^6,ymin=1.46,ymax=1.85,fill="white") +
-     annotate("text",size=2, hjust=0,x = 14.65*10^6, y = 1.8, label = "italic(`P. pun. female`) : y == 0.14 + 4.7 %*% 10 ^ -8 * x",parse = TRUE) +
-     annotate("text",size=2, hjust=0,x = 14.65*10^6, y = 1.7, label = "italic(`G. acu. female`) : y == 0.22 + 1.6 %*% 10 ^ -8 * x",parse = TRUE) +
-     annotate("text",size=2, hjust=0,x = 14.65*10^6, y = 1.6, label = "italic(`P. pun. male`) : y == 0.42 + 7.3 %*% 10 ^ -9 * x",parse = TRUE) +
-     annotate("text",size=2, hjust=0,x = 14.65*10^6, y = 1.5, label = "italic(`G. acu. male`) : y == 0.13 + 4.1 %*% 10 ^ -8 * x",parse = TRUE) +
      theme(legend.position="none",text=element_text(size=6),axis.text=element_text(size=4),panel.grid.minor=element_blank())
      
      Nspn.plot.table$SEXCODE=rep(c("SEX1","SEX2"),each=21)
      Tspn.plot.table$SEXCODE=rep(c("SEX1","SEX2"),each=21)
-     print(summary(lm(COCOUNTPERbp ~ LENGTH,data=subset(Nspn.plot.table,CHR!="LG12" & SEX=="FEMALE"))))
-     print("Fit the second model, female as base line P.pun")
      model.9spn=lm(COCOUNTPERbp ~ LENGTH*SEXCODE,data=subset(Nspn.plot.table,CHR!="LG12"))
-     print(summary(model.9spn))
-     print("Fit the second model, female as base line G.acu")
      model.3spn=lm(COCOUNTPERbp ~ LENGTH*SEXCODE,data=Tspn.plot.table,CHR!="chrXIX")
-     print(summary(model.3spn))
-     print(coef(model.9spn))
      lm.table=data.frame(INTERCEPT = c(coef(model.9spn)[1],(coef(model.9spn)[1]+coef(model.9spn)[3]),coef(model.3spn)[1],(coef(model.3spn)[1]+coef(model.3spn)[3])),
      SLOPE= c(coef(model.9spn)[2],(coef(model.9spn)[2]+coef(model.9spn)[4]),coef(model.3spn)[2],(coef(model.3spn)[2]+coef(model.3spn)[4])),
      SEX=c("FEMALE","MALE","FEMALE","MALE") ,SPECIES=c("P. pungitius","P. pungitius","G. aculeatus","G. aculeatus"))
@@ -116,11 +99,6 @@ object jointFigures {
      lm.table$COL=factor(lm.table$COL, levels=c("FEMALE:P. pungitius","FEMALE:G. aculeatus","MALE:P. pungitius","MALE:G. aculeatus"))
      p2=ggplot(plot.table,aes(x=LENGTH,y=COCOUNTPERbp,col=COL,fill=COL,shape=COL)) + ylim(0.65*10^(-8),6.5*10^(-8)) +
      geom_abline(data=lm.table,inherit.aes=F,mapping=aes(intercept=INTERCEPT,slope=SLOPE,colour=COL,linetype=SPECIES),size=0.9,show.legend=F) +
-     annotate("rect",xmin=14.5*10^6,xmax=29*10^6,ymin=0.655*10^(-8), ymax = 1.9*10^(-8),fill="white") +
-     annotate("text",size=2, hjust=0,x = 14.65*10^6, y = 1.7*10^(-8), label = "italic(`P. pun. female`) : y == 6.0 %*% 10 ^ {-8} - 2.6 %*% 10 ^ {-16} * x",parse = TRUE) +
-     annotate("text",size=2, hjust=0,x = 14.65*10^6, y = 1.4*10^(-8), label = "italic(`G. acu. female`) : y == 5.4 %*% 10 ^ {-8} - 2.8 %*% 10 ^ {-16} * x",parse = TRUE) +
-     annotate("text",size=2, hjust=0,x = 14.65*10^6, y = 1.1*10^(-8), label = "italic(`P. pun. male`) : y == 4.6 %*% 10 ^ {-8} - 8.6 %*% 10 ^ {-16} * x",parse = TRUE) +
-     annotate("text",size=2, hjust=0,x = 14.65*10^6, y = 0.8*10^(-8), label = "italic(`G. acu. male`) : y == 3.6 %*% 10 ^ {-8} - 4.3 %*% 10 ^ {-16} * x",parse = TRUE) +
      geom_point(aes(shape=COL),color="black",size=1.5,stroke=0.2) +
      ylab(label="Average number of crossovers per base pair")+xlab(label="Chromosome length (bp)") + 
      scale_color_manual(values=c("tan1","tan3","steelblue1","steelblue3"),labels = c("P. pungitius \n female","G. aculeatus \n female", "P. pungitius \n male","G. aculeatus \n male")) +
@@ -345,7 +323,6 @@ object jointFigures {
           table1$SPECIES="P. pungitius"
           table2$SPECIES="G. aculeatus"
           table2=table2[,colnames(table1)]
-          print(head(table2))
           plot.table=rbind(table1,table2)
           plot.table$SPECIES=factor(plot.table$SPECIES,levels=c("P. pungitius","G. aculeatus"))
           plot.table$SEX=factor(plot.table$SEX,labels=c("Maternal","Paternal"))
@@ -360,14 +337,10 @@ object jointFigures {
 		  table1$SEX=factor(table1$SEX,levels=c("PATERNAL","MATERNAL"))
 		  m1.ppun=glmmTMB(DISTANCETOCENTROMERE ~ fQARMCOCOUNT + SEX + (1|fOFFSPRING) + (1|fCHR), data=table1, family=beta_family) 
           m2.ppun=glmmTMB(DISTANCETOCENTROMERE ~ fQARMCOCOUNT*SEX + (1|fOFFSPRING) + (1|fCHR), data=table1, family=beta_family)
-		  print(summary(m1.ppun))
-		  print(summary(m2.ppun))
 		  table2$SEX=factor(table2$SEX,levels=c("PATERNAL","MATERNAL"))
 		  m1.gacu=glmmTMB(DISTANCETOCENTROMERE ~ fQARMCOCOUNT + SEX + (1|fOFFSPRING) + (1|fCHR), data=table2, family=beta_family) 
 		  m2.gacu=glmmTMB(DISTANCETOCENTROMERE ~ fQARMCOCOUNT*SEX + (1|fOFFSPRING) + (1|fCHR), data=table2, family=beta_family)
-		  print(summary(m1.gacu))
-		  print(summary(m2.gacu))
-        """
+		  """
     )
     
     val plotModelFits=REvaluate(
@@ -427,12 +400,9 @@ object jointFigures {
 	      ggsave("estimates1.png")
 	      ggsave("estimates1.pdf",device="pdf",height=140,width=117,units="mm")
 	      
-	      print(colnames(table3))
-	      print(colnames(table4))
 	      plot.table=data.frame(CHR=1:21,PVALUE=c(table3$MATERNALpStahl,table3$MATERNALpGamma,table3$MATERNALpYF,table3$PATERNALpStahl,table3$PATERNALpGamma,table3$PATERNALpYF,table4$MATERNALpStahl,table4$MATERNALpGamma,table4$MATERNALpYF,table4$PATERNALpStahl,table4$PATERNALpGamma,table4$PATERNALpYF),MODEL=rep(c("Gamma-sprinkling","Gamma","Yu & Feingold"),each=21),SEX=rep(c("Maternal","Paternal"),each=3*21),SPECIES=rep(c("P. pungitius","G. aculeatus"),each=6*21),
 	      SIGN=c("1","2"))
 	      plot.table$SPECIES = factor(plot.table$SPECIES,levels=c("P. pungitius", "G. aculeatus"))
-	      print(plot.table)
 	      ggplot(plot.table,aes(x=CHR,y=PVALUE)) + geom_point(size=0.5) + facet_grid(MODEL~SPECIES+SEX) +
 	       scale_color_manual(labels = c("p<0.05","p>=0.05"), values = c("salmon","skyblue3")) + 
 	       ylab("p-value") + xlab("Chromosome") + geom_hline(yintercept=0.05,lty=2) +
@@ -755,7 +725,6 @@ object jointFigures {
 		
 		both.total$COL=paste(both.total$SPECIES,both.total$SEX,sep=" ")
 		variance.both$COL=paste(variance.both$SPECIES,variance.both$SEX,sep=" ")
-		print(head(both.total))
 		ggplot(both.total,aes(VALUE,fill=COL,col=COL)) + geom_histogram() + geom_point(data=variance.both,aes(x=VALUE,y=0),shape=21,color="black") +
 		scale_color_manual(values=c("tan3","steelblue3","tan1","steelblue1")) + scale_fill_manual(values=c("tan3","steelblue3","tan1","steelblue1")) +
 		facet_wrap(GROUP~SPECIES,scales="free") +
@@ -768,5 +737,3 @@ object jointFigures {
      )
 
 }
-// d$CHR=factor(d$CHR,levels=paste0("LG",1:21))
-//p=ggplot(d,aes(x=BIN,y=DENSITY,fill=as.factor(CO),col=as.factor(CO)))+geom_line()+geom_ribbon(aes(x=BIN,ymax=DENSITY),ymin=0,alpha=0.3) + facet_grid(CHR ~ SEX + CO.GROUP,scales="free_y")
