@@ -24,8 +24,8 @@ object jointFigures {
     val blindToCentromere3spn = INPUT("result_threespinedRecombination/blindToCentromere/table.csv")
     val concatenateCrossovers9spn = INPUT("result_ninespinedRecombination/concatenateRecombinationEventsHelsinki/table.csv")
     val concatenateCrossovers3spn = INPUT("result_threespinedRecombination/concatenateRecombinationEventsThreespine/table.csv")
-    val cleanedDistributions9spn = INPUT("result_ninespinedRecombination/plotCleanedDistributions/outArray/empricalAndInferredDistributions.csv")
-    val cleanedDistributions3spn = INPUT("result_threespinedRecombination/plotCleanedDistributions/outArray/empricalAndInferredDistributions.csv")
+    val cleanedDistributions9spn = INPUT("result_ninespinedRecombination/plotCleanedDistributions/outArray/empiricalAndInferredDistributions.csv")
+    val cleanedDistributions3spn = INPUT("result_threespinedRecombination/plotCleanedDistributions/outArray/empiricalAndInferredDistributions.csv")
     
     val plotMetadata = REvaluate(
     table1 = chromosomeMetadata9spn,

@@ -7,36 +7,50 @@ import org.anduril.runtime._
 //$OPT --threads 14
 
 
-object ninepinedRecombination {
-  val lgs = Seq("LG1","LG2","LG3","LG4","LG5","LG6","LG7","LG8","LG9","LG10","LG11","LG12","LG13","LG14","LG15","LG16","LG17","LG18","LG19","LG20","LG21")
-  val recombinationSitesHelsinki = INPUT("")//Ppungitius_Helsinki_linkagemap.txt.gz 
-  val ninespinedCentromeres = INPUT("")//Centromere positions according to P. pungitius reference genome ver. 7 (Kivikoski et al. 2020)
-  val v7Index = INPUT("")//Index (.fai) of the P. pungitius reference genome ver. 7 (Kivikoski et al. 2020) 
+object threespinedRecombination {
+  val chrs = Seq("chrI","chrII","chrIII","chrIV","chrV","chrVI","chrVII","chrVIII","chrIX","chrX","chrXI","chrXII","chrXIII","chrXIV","chrXV","chrXVI","chrXVII","chrXVIII","chrXIX","chrXX","chrXXI")
+  val recombinationSitesHeader = INPUT("Gaculeatus_linkagemap_header.txt")    
+  val recombinationSitesThreespine = INPUT("Gaculeatus_linkagemap.txt")
+  val referenceFasta = INPUT("")  //Three-spined stickleback reference genome (Peichel et al. 2017)
+  val referenceFai = INPUT("") //Index (.fai) of the three-spined stickleback reference genome
+  val centromereFasta = INPUT("") //Centromere-associated repeat element in FASTA format (Cech & Peichel 2015)
   val emAlgorithmFunctions = INPUT("emAlgortihmForCoProbabilities.r")
   val decompositionFunctions = INPUT("decompositionFunctions.r")
   val gameteGeneratingFunctions = INPUT("gameteGeneratingFunctions.r")
   val decomposedDistributions = NamedMap[REvaluate]("decomposedDistributions") 
   val decomposedDistributionsTMP = NamedMap[BinaryFolder]("decomposedDistributionsTMP") 
 
-
-  val concatenateRecombinationEventsHelsinki = REvaluate(
-      var1=recombinationSitesHelsinki,
+  
+  val recombinationSitesThreespineAsterisksRemoved=BashEvaluate(
+      var1 = recombinationSitesThreespine,
+      var2 = recombinationSitesHeader,
+      command = """
+          tr -d '*' < @var1@| cut --complement -f158,179,255,272,275,277,290,408,417,432,476 > @out1@  ## trim asterisks and remove duplicate offsprings with cut
+          cut --complement -f158,179,255,272,275,277,290,408,417,432,476 @var2@ > @out2@
+          
+      """
+      )
+  
+  
+  val concatenateRecombinationEventsThreespine = REvaluate(
+      var1=recombinationSitesThreespineAsterisksRemoved.out2,
+      var2=recombinationSitesThreespineAsterisksRemoved.out1,
       script="""
   
-	   IN = read.table(var1,sep="\t",stringsAsFactors=F,skip=3,header=F)
-	   header = read.table(var1,sep="\t",stringsAsFactors=F,nrows=3,header=F)
+	   header = read.table(var1,sep="\t",stringsAsFactors=F)
+	   IN = read.table(var2,sep="\t",stringsAsFactors=F)
 	   table.out=data.frame()
 	   raw.offspring = data.frame()
 	   
-	   lgs=paste0("LG",1:21) 
-       for(LG in lgs){
-            d=subset(IN,V1==LG)
+	   chrs=paste0("chr",as.roman(1:21)) 
+       for(CHR in chrs){
+            d=subset(IN,V1==CHR)
 			for(i in 6:ncol(d)){
-				MALE = unlist(strsplit(header[1,i],split="f"))[2]
-				FEMALE = paste0(unlist(strsplit(header[1,i],"-"))[1],"-",unlist(strsplit(header[1,i],"-"))[2])
-				FAMILY= header[1,i]
-				OFFSPRING = header[2,i] 
-				SEX = header[3,i]
+				MALE = header[2,i]
+				FEMALE = header[3,i]
+				FAMILY= paste0(MALE,"-",FEMALE)
+				OFFSPRING = header[1,i] 
+				SEX = header[4,i]
 				 
 				tmp = data.frame(d$V1,d$V2,d$V4,d$V5,unlist(sapply(strsplit(d[,i]," "),function(x) as.numeric(x[1]))),unlist(sapply(strsplit(d[,i]," "),function(x) as.numeric(x[2]))))
 				colnames(tmp) = c("CHR","SITE","PATERNALMAP","MATERNALMAP","PATERNAL","MATERNAL")
@@ -97,14 +111,14 @@ object ninepinedRecombination {
 				  }
 	            } #FOR INDIVIDUAL ENDS
 	  
-	            raw.offspring.tmp = data.frame(OFFSPRING=OFFSPRING, MALE=MALE, FEMALE=FEMALE,CHR=LG,
+	            raw.offspring.tmp = data.frame(OFFSPRING=OFFSPRING, MALE=MALE, FEMALE=FEMALE,CHR=CHR,
 	            MATERNALCOUNT=length(precise.sites.maternal),PATERNALCOUNT=length(precise.sites.paternal),MATERNALSITES=paste(precise.sites.maternal,collapse=","),
 			    SEX=SEX,PATERNALSITES=paste(precise.sites.paternal,collapse=","), PATERNALSITESCM=paste(precise.sites.paternal.CM,collapse=","), MATERNALSITESCM=paste(precise.sites.maternal.CM,collapse=","),
 			    PATERNALHAPLOTYPES=paste(haplotypes.paternal,collapse=","),MATERNALHAPLOTYPES=paste(haplotypes.maternal,collapse=","))
 			    raw.offspring=rbind(raw.offspring,raw.offspring.tmp)
 	  
 	       }#FOR DATA ENDS
-       } #FOR LG ENDS
+       } #FOR CHR ENDS
 
   max.co.count=max(c(raw.offspring$MATERNALCOUNT,raw.offspring$PATERNALCOUNT))
   for(i in 1:max.co.count){
@@ -122,17 +136,17 @@ object ninepinedRecombination {
 
   val runEmAlgrithm = REvaluate(
 	    var1 = emAlgorithmFunctions,
-	    table1 = concatenateRecombinationEventsHelsinki.table,
+	    table1 = concatenateRecombinationEventsThreespine.table,
 	    script="""
 		    source(var1)
 		    table.out=data.frame()
 		    OUT.ARRAY=list()
 		     
-		    lgs = paste0("LG",seq(1,21))
-		    lgs=lgs[1:21]
+		    chrs = paste0("chr",as.roman(1:21))
+		    chrs=chrs[1:21]
 	  	    maximum.co.count=max(c(table1$MATERNALCOUNT,table1$PATERNALCOUNT))
-		    OUT.PATERNAL=data.frame(CHR=lgs)
-		    OUT.MATERNAL=data.frame(CHR=lgs)
+		    OUT.PATERNAL=data.frame(CHR=chrs)
+		    OUT.MATERNAL=data.frame(CHR=chrs)
 		    for(i in 0:maximum.co.count){
 		        OUT.PATERNAL[[paste0("n",i)]]=100
 		        OUT.MATERNAL[[paste0("n",i)]]=100
@@ -185,20 +199,19 @@ object ninepinedRecombination {
 	 		    } else {
 			        OUT.VECTOR=c(DATA.print,round(p.non.restricted[1:10],8),P.val,conf.intervals)
 			    }
-	 		    
-		       return(OUT.VECTOR)
+	 		   return(OUT.VECTOR)
 		       	    
 		    }
 		    
 		    OUT.PATERNAL.PER.FAMILY=data.frame()
 		    OUT.MATERNAL.PER.FAMILY=data.frame()
-		    for(LG in lgs){
-		        perOffspring=subset(table1,CHR==LG)
+		    for(CHROMOSOME in chrs){
+		        perOffspring=subset(table1,CHR==CHROMOSOME)
 	 		    families = names(table(perOffspring$MALE)[table(perOffspring$MALE)>20])
 	 		    
 	 		    if(PERFAMILY){
-	 		       OUT.PATERNAL.PER.FAMILY.TMP=data.frame(CHR=rep(LG,length(families)),n0=100,n1=100,n2=100,n3=100,n4=100,n5=100,MLEp0=100,MLEp1=100,MLEp2=100,MLEp3=100,MLEp4=100,MLEp5=100,MLEp6=100,MLEp7=100,MLEp8=100,MLEp9=100,BootstrapPvalue=100,LowerBound=100,UpperBound=100,LG.LENGTH=rep(LG.length,length(families)),FAMILY=families)
-	 		       OUT.MATERNAL.PER.FAMILY.TMP=data.frame(CHR=rep(LG,length(families)),n0=100,n1=100,n2=100,n3=100,n4=100,n5=100,MLEp0=100,MLEp1=100,MLEp2=100,MLEp3=100,MLEp4=100,MLEp5=100,MLEp6=100,MLEp7=100,MLEp8=100,MLEp9=100,BootstrapPvalue=100,LowerBound=100,UpperBound=100,LG.LENGTH=rep(LG.length,length(families)),FAMILY=families)
+	 		       OUT.PATERNAL.PER.FAMILY.TMP=data.frame(CHR=rep(CHROMOSOME,length(families)),n0=100,n1=100,n2=100,n3=100,n4=100,n5=100,MLEp0=100,MLEp1=100,MLEp2=100,MLEp3=100,MLEp4=100,MLEp5=100,MLEp6=100,MLEp7=100,MLEp8=100,MLEp9=100,BootstrapPvalue=100,LowerBound=100,UpperBound=100,LG.LENGTH=rep(LG.length,length(families)),FAMILY=families)
+	 		       OUT.MATERNAL.PER.FAMILY.TMP=data.frame(CHR=rep(CHROMOSOME,length(families)),n0=100,n1=100,n2=100,n3=100,n4=100,n5=100,MLEp0=100,MLEp1=100,MLEp2=100,MLEp3=100,MLEp4=100,MLEp5=100,MLEp6=100,MLEp7=100,MLEp8=100,MLEp9=100,BootstrapPvalue=100,LowerBound=100,UpperBound=100,LG.LENGTH=rep(LG.length,length(families)),FAMILY=families)
 	 		       for(p in families){
 	 		           maternal.data=concatenate.data(subset(perOffspring, MALE==p)$MATERNALCOUNT)
 	 		           paternal.data=concatenate.data(perOffspring[perOffspring$MALE==p,"PATERNALCOUNT"])
@@ -217,12 +230,11 @@ object ninepinedRecombination {
 		 		    maternal.data=concatenate.data(perOffspring$MATERNALCOUNT)
 		 		    paternal.data=concatenate.data(perOffspring$PATERNALCOUNT)
 		 		    
-		 		    OUT.PATERNAL[OUT.PATERNAL$CHR==LG,2:20]=main(paternal.data,ITER,r,ALPHA)
-		 		    OUT.MATERNAL[OUT.MATERNAL$CHR==LG,2:20]=main(maternal.data,ITER,r,ALPHA)
+		 		    OUT.PATERNAL[OUT.PATERNAL$CHR==CHROMOSOME,2:20]=main(paternal.data,ITER,r,ALPHA)
+		 		    OUT.MATERNAL[OUT.MATERNAL$CHR==CHROMOSOME,2:20]=main(maternal.data,ITER,r,ALPHA)
 		 		    
 		 	    }
 		    }
-	 		
 	 		OUT.ARRAY[["PATERNAL"]]=OUT.PATERNAL
 	 		OUT.ARRAY[["MATERNAL"]]=OUT.MATERNAL
 	 		if(PERFAMILY){
@@ -230,27 +242,82 @@ object ninepinedRecombination {
 	 		    OUT.ARRAY[["MATERNAL.PER.FAMILY"]]=OUT.MATERNAL.PER.FAMILY
 			}
 			array.out=OUT.ARRAY
-			
 			colnames(OUT.PATERNAL)=paste0("PATERNAL",colnames(OUT.PATERNAL))
 			colnames(OUT.MATERNAL)=paste0("MATERNAL",colnames(OUT.MATERNAL))
-				    
-		    """
+			"""
 		    )
 
 
-      
+  
+  val annotateCentromeres=BashEvaluate(
+    var1=referenceFasta,
+    var2=centromereFasta,
+    command="""
+    cd @folder1@   
+    for i in I II III IV V VI VII VIII IX X XI XII XIII XIV XV XVI XVII XVIII XIX XX XXI; do
+       samtools faidx @var1@ chr$i > tmpref.fa
+	   makeblastdb -in @var1@ -dbtype nucl
+	   blastn -task blastn -db @var1@ -query @var2@ -outfmt 6 -out tmp.out
+	   cat tmp.out >> @out3@    
+    done
+    """
+    )
+  
+  val defineCentromeres = REvaluate(
+      var1 = annotateCentromeres.out3,
+      script="""
+          table.out=data.frame()
+          chrs=paste0("chr",as.roman(1:21))
+          out=data.frame(CHR=chrs,CENTROMERESTART=0,CENTROMERE=0,CENTROMEREEND=0)
+
+	      blasthits=read.table(var1,sep="\t",stringsAsFactors=F,header=F)
+	      blasthits$c=rowMeans(blasthits[,c(9,10)])
+	      blasthits$loge=log10(blasthits$V11)
+	      for(CHR in chrs){
+	    	  if(CHR %in% blasthits$V2){
+				  if(nrow(subset(blasthits,V2==CHR & loge < -5))<5){
+				      blast.hits=subset(blasthits,V2==CHR)
+				  } else{
+				      blast.hits=subset(blasthits,V2==CHR & loge < -5)
+				  }
+				  CENTERS=3
+				  if(length(unique(paste0(blast.hits$V9,":",blast.hits$V10)))<3){CENTERS=length(unique(paste0(blast.hits$V9,":",blast.hits$V10)))}
+				  clustering=kmeans(blast.hits$c,centers=CENTERS,iter.max=100)
+				  blast.hits$k=clustering$cluster
+				  keep=which(prop.table(as.numeric(table(blast.hits$k))) > 0.1)
+				  if(CHR=="chrIII"){
+				      blast.hits=subset(blast.hits, V9<10^7 & V10<10^7)
+				  } else{
+				      blast.hits=subset(blast.hits,k %in% keep)
+				  }
+				  centromere.start=min(c(blast.hits$V9,blast.hits$V10))
+				  centromere.end=max(c(blast.hits$V9,blast.hits$V10))
+				  centromere.mid=round(mean(c(centromere.start,centromere.end)))
+				  if(CHR=="chrVIII"){
+				      centromere.start=1*10^5
+				      centromere.end=3*10^5
+				      centromere.mid=2*10^5
+				      }
+			  }
+		  out[out$CHR==CHR,c("CENTROMERESTART","CENTROMERE","CENTROMEREEND")]=c(centromere.start,centromere.mid,centromere.end)
+		  }
+		  table.out=out
+       """
+  )   
+
+     
       val chromosomeMetadata=REvaluate(
-      var1=v7Index,
-      var2=recombinationSitesHelsinki,
-      table1=concatenateRecombinationEventsHelsinki.table,
-      table2=ninespinedCentromeres,
+      var1=referenceFai,
+      var2=recombinationSitesThreespineAsterisksRemoved.out1,
+      table1=concatenateRecombinationEventsThreespine.table,
+      table2=defineCentromeres.table,
       inArray=runEmAlgrithm.outArray,
       script="""
 		
-		lgs=paste0("LG",1:21)
-		v7Index=read.table(var1,sep="\t",header=F,stringsAsFactors=F)
-		map.data=read.table(var2,sep="\t",header=F,stringsAsFactors=F,skip=3)
-		
+		chrs=paste0("chr",as.roman(1:21))
+		ref.index=read.table(var1,sep="\t",header=F,stringsAsFactors=F)
+		map.data=read.table(var2,sep="\t",header=F,stringsAsFactors=F)
+		map.data$V2=as.numeric(map.data$V2)
 		LENGTH=c()
 		CENTROMERESTART=c()
 		CENTROMERE=c()
@@ -276,17 +343,16 @@ object ninepinedRecombination {
 		MEANCOCOUNTMATERNAL=c()
 		MEANCOCOUNTPATERNAL=c()
 		
-		for(LG in lgs){
-		    lg.length=max(v7Index[v7Index$V1==LG,2])
-		    map=subset(map.data, V1==LG)
-		    centromere=table2[table2$CHR==LG,"CENTROMERE"]
-		    centromere.start=table2[table2$CHR==LG,"CENTROMERESTART"]
-		    centromere.end=table2[table2$CHR==LG,"CENTROMEREEND"]
+		for(CHROM in chrs){
+		    chr.length=ref.index[ref.index$V1==CHROM,2]
+		    map=subset(map.data, V1==CHROM)
+		    centromere=table2[table2$CHR==CHROM,"CENTROMERE"]
+		    centromere.start=table2[table2$CHR==CHROM,"CENTROMERESTART"]
+		    centromere.end=table2[table2$CHR==CHROM,"CENTROMEREEND"]
 		    map.length.paternal=max(map[,4])
 		    map.length.maternal=max(map[,5])
-		    co.data=subset(table1,CHR==LG)
-		    
-		    LENGTH=c(LENGTH,lg.length)
+		    co.data=subset(table1,CHR==CHROM)
+		    LENGTH=c(LENGTH,chr.length)
 		    CENTROMERESTART=c(CENTROMERESTART,centromere.start)
 		    CENTROMERE=c(CENTROMERE,centromere)
 		    CENTROMEREEND=c(CENTROMEREEND,centromere.end)
@@ -298,8 +364,8 @@ object ninepinedRecombination {
 		    centromere.start.maternal=c(centromere.start.maternal,map[which.min(abs(map[[2]]-centromere.start)),5])
 		    centromere.end.paternal=c(centromere.end.paternal,map[which.min(abs(map[[2]]-centromere.end)),4])
 		    centromere.end.maternal=c(centromere.end.maternal,map[which.min(abs(map[[2]]-centromere.end)),5])
-		    PARMLENGTH=c(PARMLENGTH,min(centromere,lg.length-centromere))
-		    QARMLENGTH=c(QARMLENGTH,max(centromere,lg.length-centromere))
+		    PARMLENGTH=c(PARMLENGTH,min(centromere,chr.length-centromere))
+		    QARMLENGTH=c(QARMLENGTH,max(centromere,chr.length-centromere))
 		    PARMLENGTHCMMATERNAL=c(PARMLENGTHCMMATERNAL,min(map[which.min(abs(map[[2]]-centromere)),5],map.length.maternal-map[which.min(abs(map[[2]]-centromere)),5]))
 		    PARMLENGTHCMPATERNAL=c(PARMLENGTHCMPATERNAL,min(map[which.min(abs(map[[2]]-centromere)),4],map.length.paternal-map[which.min(abs(map[[2]]-centromere)),4]))
 		    QARMLENGTHCMMATERNAL=c(QARMLENGTHCMMATERNAL,max(map[which.min(abs(map[[2]]-centromere)),5],map.length.maternal-map[which.min(abs(map[[2]]-centromere)),5]))
@@ -311,7 +377,7 @@ object ninepinedRecombination {
 		    MEANCOCOUNTMATERNAL=c(MEANCOCOUNTMATERNAL,mean(co.data$MATERNALCOUNT))
 		    MEANCOCOUNTPATERNAL=c(MEANCOCOUNTPATERNAL,mean(co.data$PATERNALCOUNT))
 		}
-		chromosome.meta.data=data.frame(CHR=lgs,LENGTH,CHRLENGTHCMMATERNAL=CM.female,CHRLENGTHCMPATERNAL=CM.male,CENTROMERESTART,CENTROMERE,CENTROMEREEND,PARMLENGTH,QARMLENGTH,PARMLENGTHCMMATERNAL,PARMLENGTHCMPATERNAL,QARMLENGTHCMMATERNAL,QARMLENGTHCMPATERNAL,CENTROMEREMATERNALCM=centromere.maternal,CENTROMEREPATERNALCM=centromere.paternal,CENTROMERESTARTMATERNALCM=centromere.start.maternal,CENTROMERESTARTPATERNALCM=centromere.start.paternal,CENTROMEREENDMATERNALCM=centromere.end.maternal,CENTROMEREENDPATERNALCM=centromere.end.paternal,MINCOCOUNTMATERNAL,MINCOCOUNTPATERNAL,MAXCOCOUNTMATERNAL,MAXCOCOUNTPATERNAL,MEANCOCOUNTMATERNAL,MEANCOCOUNTPATERNAL)
+		chromosome.meta.data=data.frame(CHR=chrs,LENGTH,CHRLENGTHCMMATERNAL=CM.female,CHRLENGTHCMPATERNAL=CM.male,CENTROMERESTART,CENTROMERE,CENTROMEREEND,PARMLENGTH,QARMLENGTH,PARMLENGTHCMMATERNAL,PARMLENGTHCMPATERNAL,QARMLENGTHCMMATERNAL,QARMLENGTHCMPATERNAL,CENTROMEREMATERNALCM=centromere.maternal,CENTROMEREPATERNALCM=centromere.paternal,CENTROMERESTARTMATERNALCM=centromere.start.maternal,CENTROMERESTARTPATERNALCM=centromere.start.paternal,CENTROMEREENDMATERNALCM=centromere.end.maternal,CENTROMEREENDPATERNALCM=centromere.end.paternal,MINCOCOUNTMATERNAL,MINCOCOUNTPATERNAL,MAXCOCOUNTMATERNAL,MAXCOCOUNTPATERNAL,MEANCOCOUNTMATERNAL,MEANCOCOUNTPATERNAL)
 		paternal=array[["PATERNAL"]]
 		maternal=array[["MATERNAL"]]
 		colnames(paternal)=paste0("PATERNAL",colnames(paternal))
@@ -319,23 +385,21 @@ object ninepinedRecombination {
 		table.out=cbind(chromosome.meta.data,paternal[,-1],maternal[,-1])
       """
       )
+ 
+      
       
       val fitModels=REvaluate(
-          table1=concatenateRecombinationEventsHelsinki.table,
+          table1=concatenateRecombinationEventsThreespine.table,
           table2=chromosomeMetadata.table,
-          var1=gameteGeneratingFunctions,
           inArray=runEmAlgrithm.outArray,
+          var1=gameteGeneratingFunctions,
           script="""
-		  library(lme4)
 		  library(xoi)
 		  ##################
 	      table.out=data.frame()
-	      rm('optOut1')
-		  fig.dir <- get.output(cf, 'optOut1')
-		  dir.create(fig.dir, recursive=TRUE)
-		  setwd(fig.dir)
-		  source(var1)
+	      source(var1)
 		  ##################			
+		  set.seed=13
 		  h=9
 			pascalTriangle <- function(h) {
 			   lapply(0:h, function(i) choose(i, 0:i))
@@ -348,10 +412,9 @@ object ninepinedRecombination {
 			   return(observed.co.count)
 			}
 		  ##################
-		  lgs = paste0("LG",seq(1,21))
+		  chrs = paste0("chr",as.roman(1:21))
 		  
-		  
-          p.val.stahl.maternal=c()
+		  p.val.stahl.maternal=c()
           p.val.stahl.paternal=c()
           p.val.gamma.maternal=c()
           p.val.gamma.paternal=c()
@@ -397,14 +460,15 @@ object ninepinedRecombination {
          
          pooled.maternal=list()
          pooled.paternal=list()
-         for(LG in lgs) {
+         for(CHROM in chrs) {
             for(SEX in c("MATERNAL","PATERNAL")){
-            CHR.LENGTH.CM=table2[table2$CHR==LG,paste0("CHRLENGTHCM",SEX)]
-            MAX.CONV=max(which(as.numeric(table2[table2$CHR==LG,paste0(SEX,"MLEp",1:9)])>0))
+            CHR.LENGTH.CM=table2[table2$CHR==CHROM,paste0("CHRLENGTHCM",SEX)]
+            MAX.CONV=max(which(as.numeric(table2[table2$CHR==CHROM,paste0(SEX,"MLEp",1:9)])>0))
             PROB.TABLE=array[[SEX]]
-            chr.length.cm.maternal=table2[table2$CHR==LG,"CHRLENGTHCMMATERNAL"]
-            chr.length.cm.paternal=table2[table2$CHR==LG,"CHRLENGTHCMPATERNAL"]
-            d=subset(table1,CHR==LG)
+            if(SEX=="MATERNAL"){COL="salmon"};if(SEX=="PATERNAL"){COL="skyblue4"}
+            chr.length.cm.maternal=table2[table2$CHR==CHROM,"CHRLENGTHCMMATERNAL"]
+            chr.length.cm.paternal=table2[table2$CHR==CHROM,"CHRLENGTHCMPATERNAL"]
+            d=subset(table1,CHR==CHROM)
 		    #####
 		    
 		    ##################################
@@ -413,6 +477,8 @@ object ninepinedRecombination {
 		    #STAHL MODEL
 		    		    
 		    #################
+		    OBLIGATE.CHIASMA=T
+		    if(CHR.LENGTH.CM<=50){OBLIGATE.CHIASMA=F}
 		    specialD=as.matrix(d[d[[paste0(SEX,"COUNT")]]>1,paste0(SEX,"SITE",1:5,"CM")])
 
 		    xoloc.list = as.list(apply(d[,paste0(SEX,"SITE",1:5,"CM")],1,function(x) sort(as.numeric(x[1:5])[is.na(as.numeric(x[1:5]))==F])))
@@ -426,21 +492,20 @@ object ninepinedRecombination {
 		    censor3=rep(CHR.LENGTH.CM,nrow(d[d[[paste0(SEX,"COUNT")]]==0,]))
 		    interCO.distances=c(censor1,censor0,censor2,censor3)
 		  
-			simulate.yf=replicate(10000,sample.co.count(LG,PROB.TABLE))
+			simulate.yf=replicate(10000,sample.co.count(CHROM,PROB.TABLE))
 			stahl.out=fitStahl(xoloc.list, CHR.LENGTH.CM,nu=c(1,20),p=0.01,max.conv=MAX.CONV,max.subd = 5000,min.subd = 100)
-			simulated.stahl=simStahl(n.sim=10000,nu=median(c(1,round(stahl.out[1]),5000)),p=max(10^(-6),stahl.out[2]),L=CHR.LENGTH.CM,obligate_chiasma=T)
-			simulated.gamma=simStahl(n.sim=10000,nu=max(c(1,round(stahl.out[4]))),p=0,L=CHR.LENGTH.CM,obligate_chiasma=T)
-			  
+			simulated.stahl=simStahl(n.sim=10000,nu=median(c(1,round(stahl.out[1]),5000)),p=max(10^(-6),stahl.out[2]),L=CHR.LENGTH.CM,obligate_chiasma=OBLIGATE.CHIASMA)
+			simulated.gamma=simStahl(n.sim=10000,nu=max(c(1,round(stahl.out[4]))),p=0,L=CHR.LENGTH.CM,obligate_chiasma=OBLIGATE.CHIASMA)
 			        
 		    MAX.COUNT=max(c(d[[paste0(SEX,"COUNT")]],unlist(lapply(simulated.stahl,function(x) length(x)))))
-		        TEST.MATRIX=matrix(c(as.numeric(table(factor(d[[paste0(SEX,"COUNT")]],levels=seq(0,MAX.COUNT)))),as.numeric(table(factor(unlist(lapply(simulated.stahl,function(x) length(x))),levels=seq(0,MAX.COUNT))))),byrow=T,nrow=2)
+		        TEST.MATRIX=matrix(c(as.numeric(table(factor(d[[paste0(SEX,"COUNT")]],levels=seq(0,MAX.COUNT))))+1,as.numeric(table(factor(unlist(lapply(simulated.stahl,function(x) length(x))),levels=seq(0,MAX.COUNT))))+1),byrow=T,nrow=2)
 		        Xsq.stahl3 <- chisq.test(x=TEST.MATRIX)
 		        MAX.COUNT=max(c(d[[paste0(SEX,"COUNT")]],unlist(lapply(simulated.gamma,function(x) length(x)))))
-		        TEST.MATRIX=matrix(c(as.numeric(table(factor(d[[paste0(SEX,"COUNT")]],levels=seq(0,MAX.COUNT)))),as.numeric(table(factor(unlist(lapply(simulated.gamma,function(x) length(x))),levels=seq(0,MAX.COUNT))))),nrow=2,byrow=T)
+		        TEST.MATRIX=matrix(c(as.numeric(table(factor(d[[paste0(SEX,"COUNT")]],levels=seq(0,MAX.COUNT))))+1,as.numeric(table(factor(unlist(lapply(simulated.gamma,function(x) length(x))),levels=seq(0,MAX.COUNT))))+1),nrow=2,byrow=T)
 		        Xsq.gamma3 <- chisq.test(x=TEST.MATRIX)
 		        MAX.COUNT=max(c(d[[paste0(SEX,"COUNT")]],unlist(lapply(simulated.stahl,function(x) length(x))),unlist(lapply(simulated.gamma,function(x) length(x)))))
 			    MAX.COUNT=max(c(d[[paste0(SEX,"COUNT")]],simulate.yf))
-		        TEST.MATRIX=matrix(c(as.numeric(table(factor(d[[paste0(SEX,"COUNT")]],levels=seq(0,MAX.COUNT)))),as.numeric(table(factor(simulate.yf,levels=seq(0,MAX.COUNT))))),nrow=2,byrow=T)
+		        TEST.MATRIX=matrix(c(as.numeric(table(factor(d[[paste0(SEX,"COUNT")]],levels=seq(0,MAX.COUNT))))+1,as.numeric(table(factor(simulate.yf,levels=seq(0,MAX.COUNT))))+1),nrow=2,byrow=T)
 		        Xsq.yf2 <- chisq.test(x=TEST.MATRIX)
 		        
 		        l[[paste0(SEX,"modelFit")]]=rbind(l[[paste0(SEX,"modelFit")]],c(as.numeric(Xsq.stahl3[1:3]),as.numeric(Xsq.gamma3[1:3]),as.numeric(Xsq.yf2[1:3])))
@@ -449,7 +514,6 @@ object ninepinedRecombination {
                 L=assess.second.derivative(h.values,nuhat=stahl.out[1],phat=stahl.out[2],data=xoloc.list,LOGLIK=stahl.out[3],CHRLEN=CHR.LENGTH.CM,FORNU=T,FORP=F,MAX.CONV)
                 second.derivative=L[[1]]
                 likelihood.function=c(L[[3]],stahl.out[3],rev(L[[2]]))
-                
                 
                 STAHLVSD=sqrt(-1/second.derivative[50])
                 
@@ -470,19 +534,19 @@ object ninepinedRecombination {
 		  
 	  }#FORSEX ENDS
 	  
-  }#FOR LG ENDS
+  }#FOR CHROM ENDS
 		  
 		  
 		 estimates=data.frame(cbind(l[["MATERNALestimatesStahl"]],l[["PATERNALestimatesStahl"]]))
-		 estimates=cbind(lgs,estimates)
+		 estimates=cbind(chrs,estimates)
 	     colnames(estimates)=c("CHR",paste0("MATERNAL",c("vStahl","vStahlSd","pStahl","pStahlSd","logLikStahl","vGamma","vGammaSd","logLikGamma","likelihood ratio")),paste0("PATERNAL",c("vStahl","vStahlSd","pStahl","pStahlSd","logLikStahl","vGamma","vGammaSd","logLikGamma","likelihood ratio")))
-	     model.fit=data.frame(cbind(lgs,l[["MATERNALmodelFit"]],l[["PATERNALmodelFit"]]))
+	     model.fit=data.frame(cbind(chrs,l[["MATERNALmodelFit"]],l[["PATERNALmodelFit"]]))
 	     colnames(model.fit)=c("CHR",paste0("MATERNAL",c("Chisq.Stahl","dfStahl","pStahl","Chisq.Gamma","dfGamma","pGamma","Chisq.YF","dfYF","pYF")),paste0("PATERNAL",c("Chisq.Stahl","dfStahl","pStahl","Chisq.Gamma","dfGamma","pGamma","Chisq.YF","dfYF","pYF")))
 	     out.list=list()
 	     out.list[["MODELFIT"]]=model.fit
 	     out.list[["ESTIMATES"]]=estimates
-	      		  
-	    test.results=list()
+	     
+		test.results=list()
 		test.numbers=seq(0.001,5,length.out=5000)
 		for(SEX in c("PATERNAL","MATERNAL")){
 			for(i in 1:21){
@@ -497,40 +561,47 @@ object ninepinedRecombination {
 			       p_hat.geom=1/(1+2*(sum(test.data*(0:(length(test.data)-1)))/sum(table2[i,paste0(SEX,"n",0:5)]))-1)
 			       if(p_hat.geom>1){p_hat.geom=0.999}
 			       t1=test.fit.pois(1,test.data,lambda=LAMBDA.POIS,n.gametes)
+			       if(t1[[1]]<=0.05){p1=min(c(0.05,0.01,0.001)[c(0.05,0.01,0.001)-t1[[1]]>0])}else{p1=round(t1[[1]],3)}
 			       t2=test.fit.trunc.pois(1,test.data,lambda=LAMBDA.trunc.pois,n.gametes)
+				   if(t2[[1]]<=0.05){p2=min(c(0.05,0.01,0.001)[c(0.05,0.01,0.001)-t2[[1]]>0])}else{p2=round(t2[[1]],3)}
 				   t3=test.fit.geom(1,test.data,p_hat.geom,n.gametes)
+				   if(t3[[1]]<=0.05){p3=min(c(0.05,0.01,0.001)[c(0.05,0.01,0.001)-t3[[1]]>0])}else{p3=round(t3[[1]],3)}
 				   t4=test.fit.yf(1,test.data,probs=PROBS,n.gametes)
-			       
-			       test.results[[SEX]]=rbind(test.results[[SEX]],c(t1[[3]],t1[[1]],LAMBDA.POIS,t2[[3]],t2[[1]],LAMBDA.trunc.pois,t3[[3]],t3[[1]],p_hat.geom,t4[[1]]))
+			       if(t4[[1]]<=0.05){p4=min(c(0.05,0.01,0.001)[c(0.05,0.01,0.001)-t4[[1]]>0])}else{p4=round(t4[[1]],3)}
+				   
+			       test.results[[SEX]]=rbind(test.results[[SEX]],c(round(t1[[3]],2),p1,LAMBDA.POIS,round(t2[[3]],2),p2,LAMBDA.trunc.pois,round(t3[[3]],2),p3,p_hat.geom,p4))
+
 				}
 				
 			}
-		collect.results=data.frame(CHR=paste0("LG",1:21))
-		collect.results=cbind(collect.results,as.data.frame(test.results[["MATERNAL"]]),as.data.frame(test.results[["PATERNAL"]]))
-		colnames(collect.results)=c("CHR",paste0("MATERNAL",c("ChiPOISSON","pPOISSON","LAMBDA_hat","ChiTRUNCPOISSON","pTRUNCPOISSON","TRUNC_LAMBDA_hat","ChiGEOMETRIC","pGEOMETRIC","P_hat","pYF")),paste0("PATERNAL",c("ChiPOISSON","pPOISSON","LAMBDA_hat","ChiTRUNCPOISSON","pTRUNCPOISSON","TRUNC_LAMBDA_hat","ChiGEOMETRIC","pGEOMETRIC","P_hat","pYF")))
-		out.list[["ALTERNATIVEMODELS"]]=collect.results
-		array.out=out.list
-		  
+			collect.results=data.frame(CHR=paste0("chr",as.roman(1:21)))
+			collect.results=cbind(collect.results,as.data.frame(test.results[["MATERNAL"]]),as.data.frame(test.results[["PATERNAL"]]))
+			colnames(collect.results)=c("CHR",paste0("MATERNAL",c("ChiPOISSON","pPOISSON","LAMBDA_hat","ChiTRUNCPOISSON","pTRUNCPOISSON","TRUNC_LAMBDA_hat","ChiGEOMETRIC","pGEOMETRIC","P_hat","pYF")),paste0("PATERNAL",c("ChiPOISSON","pPOISSON","LAMBDA_hat","ChiTRUNCPOISSON","pTRUNCPOISSON","TRUNC_LAMBDA_hat","ChiGEOMETRIC","pGEOMETRIC","P_hat","pYF")))
+		    out.list[["ALTERNATIVEMODELS"]]=collect.results
+			
+			out.list[["SUPPLEMENTARYTABLEMATERNAL"]]=cbind(model.fit[,c(1,2,4,5,7,8,10)],collect.results[,c(2,3,5,6,8,9)])
+			out.list[["SUPPLEMENTARYTABLEPATERNAL"]]=cbind(model.fit[,c(1,11,13,14,16,17,19)],collect.results[,c(12,13,15,16,18,19)])
+			
+			array.out=out.list
+
       """
       )
+ 
       
       val estimateHeritability=REvaluate(
-          table1=concatenateRecombinationEventsHelsinki.table,
+          table1=concatenateRecombinationEventsThreespine.table,
           table2=chromosomeMetadata.table,
           inArray=runEmAlgrithm.outArray,
           script="""
 		      table.out=data.frame()
-	          rm('optOut1')
-			  fig.dir <- get.output(cf, 'optOut1')
-			  dir.create(fig.dir, recursive=TRUE)
-			  setwd(fig.dir)
-			  ##################	
-		    
+	          
+				###########
+				
 				library(MCMCglmm)
 				library(lme4)
 				library(QGglmm)
 				d=table1 
-				d1=subset(d,CHR!="LG12" & !(MALE %in% c("88-m-2","72-m-2","69-m-1","66-m-2")))
+				d1=subset(d,CHR!="chrXIX")
 				d1$OFFSPRING2=paste(d1$OFFSPRING,d1$FEMALE,d1$MALE,sep=":")
 				paternalAspect=aggregate(d1$PATERNALCOUNT,by=list(d1$OFFSPRING2),sum)
 				paternalAspect$animal=sapply(strsplit(paternalAspect$Group.1,split=":"), function(x) x[1])
@@ -544,12 +615,12 @@ object ninepinedRecombination {
 				Data$totalR=Data$maleR+Data$femaleR
 				Ped=data.frame(animal=c(unique(Data$mother),unique(Data$father)),mother=NA,father=NA)
 				Ped=rbind(Ped,Data[,c("animal","mother","father")])
-						
+				
 				prior1.1 <- list(G = list(G1 = list(V = 1, nu = 0.002)), R = list(V = 1,nu=0.002))
 				
 				NITT=10100000
-		        THIN=1000
-		        BURNIN=100000
+				THIN=1000
+				BURNIN=100000
 				out=data.frame()
 				FAMILY=c("gaussian","poisson")
 				for(f in FAMILY){
@@ -565,8 +636,7 @@ object ninepinedRecombination {
 		                V.additive.CI=HPDinterval(as.mcmc(m$VCV[, "animal"]))
 		                V.resid=posterior.mode(as.mcmc(m$VCV[, "units"]))
 		                V.resid.CI=HPDinterval(as.mcmc(m$VCV[, "units"]))
-		                
-					    posterior.heritability <- m$VCV[, "animal"]/(m$VCV[,"animal"] + m$VCV[, "units"])
+		        	    posterior.heritability <- m$VCV[, "animal"]/(m$VCV[,"animal"] + m$VCV[, "units"])
 					    posterior.heritability.estimate <- posterior.mode(posterior.heritability)
 					    posterior.heritability.CI=HPDinterval(posterior.heritability, 0.95)
 					    table.vector=c(table.vector,posterior.heritability.estimate,posterior.heritability.CI[1],posterior.heritability.CI[2],V.additive,V.additive.CI[1],V.additive.CI[2],V.resid,V.resid.CI[1],V.resid.CI[2],V.pheno,V.pheno.CI[1],V.pheno.CI[2])
@@ -579,19 +649,15 @@ object ninepinedRecombination {
 				table.out=out	
 		      	
 		      """
-      )
-    
-          val estimateHeritabilitySIMULATED=REvaluate(
-          table1=concatenateRecombinationEventsHelsinki.table,
+		      )
+		    
+      val estimateHeritabilitySIMULATED=REvaluate(
+          table1=concatenateRecombinationEventsThreespine.table,
           table2=chromosomeMetadata.table,
           inArray=runEmAlgrithm.outArray,
           script="""
 		      table.out=data.frame()
-	          rm('optOut1')
-			  fig.dir <- get.output(cf, 'optOut1')
-			  dir.create(fig.dir, recursive=TRUE)
-			  setwd(fig.dir)
-			  ##################	
+	          ##################	
 		    PROB.TABLE.MALE=array[["PATERNAL"]]
 		    PROB.TABLE.FEMALE=array[["MATERNAL"]]
 			h=9
@@ -615,7 +681,7 @@ object ninepinedRecombination {
 		library(lme4)
 		
 		d=table1 
-		d1=subset(d,CHR!="LG12" & !(MALE %in% c("88-m-2","72-m-2","69-m-1","66-m-2")))
+		d1=subset(d,CHR!="chrXIX")
 		d1$OFFSPRING2=paste(d1$OFFSPRING,d1$FEMALE,d1$MALE,sep=":")
 		paternalAspect=aggregate(d1$PATERNALCOUNT,by=list(d1$OFFSPRING2),sum)
 		paternalAspect$animal=sapply(strsplit(paternalAspect$Group.1,split=":"), function(x) x[1])
@@ -632,11 +698,12 @@ object ninepinedRecombination {
 		
 		simulatedFemaleR=matrix(ncol=nrow(Data))
 		simulatedMaleR=matrix(ncol=nrow(Data))
-		CHRS=paste0("LG",c(1:11,13:21))
-		for(CHR in CHRS){
-		    simulatedFemaleR=rbind(simulatedFemaleR,replicate(nrow(Data),sample.co.count(CHR,PROB.TABLE.FEMALE)))
-		    simulatedMaleR=rbind(simulatedMaleR,replicate(nrow(Data),sample.co.count(CHR,PROB.TABLE.MALE)))
+		CHRS=paste0("chr",as.roman(c(1:18,20:21)))
+		for(CHROM in CHRS){
+		    simulatedFemaleR=rbind(simulatedFemaleR,replicate(nrow(Data),sample.co.count(CHROM,PROB.TABLE.FEMALE)))
+		    simulatedMaleR=rbind(simulatedMaleR,replicate(nrow(Data),sample.co.count(CHROM,PROB.TABLE.MALE)))
 		}
+		
 		
 		Data$simulatedFemaleR=colSums(simulatedFemaleR[-1,])
 		Data$simulatedMaleR=colSums(simulatedMaleR[-1,])
@@ -665,7 +732,9 @@ object ninepinedRecombination {
 			    posterior.heritability <- m$VCV[, "animal"]/(m$VCV[,"animal"] + m$VCV[, "units"])
 			    posterior.heritability.estimate <- posterior.mode(posterior.heritability)
 			    posterior.heritability.CI=HPDinterval(posterior.heritability, 0.95) 
-			    table.vector=c(table.vector,posterior.heritability.estimate,posterior.heritability.CI[1],posterior.heritability.CI[2],V.additive,V.additive.CI[1],V.additive.CI[2],V.resid,V.resid.CI[1],V.resid.CI[2],V.pheno,V.pheno.CI[1],V.pheno.CI[2])	
+			 
+			    table.vector=c(table.vector,posterior.heritability.estimate,posterior.heritability.CI[1],posterior.heritability.CI[2],V.additive,V.additive.CI[1],V.additive.CI[2],V.resid,V.resid.CI[1],V.resid.CI[2],V.pheno,V.pheno.CI[1],V.pheno.CI[2])
+			
 		    }
 		    out=rbind(out,signif(table.vector,3))
 		}
@@ -677,67 +746,63 @@ object ninepinedRecombination {
       )
       
 
-	for (LG <- lgs) {
-	  decomposedDistributions(LG) = REvaluate(
-	    table1 = concatenateRecombinationEventsHelsinki.table,
+	for (CHR <- chrs) {
+	  decomposedDistributions(CHR) = REvaluate(
+	    table1 = concatenateRecombinationEventsThreespine.table,
 	    table2 = chromosomeMetadata.table,
 	    var1 = decompositionFunctions,
-	    param1=LG,
+	    param1=CHR,
 	    script="""
 	     source(var1) 	    
 	     table.out = data.frame()
-	     rm('optOut1')
-		 fig.dir <- get.output(cf, 'optOut1')
-	     dir.create(fig.dir, recursive=TRUE)
-	     setwd(fig.dir)
-				
+	   		
 		 l=list()
-         LG=param1
+         CHROM=param1
             ITERATIONS=200
-            decomposed.distributions.1=main.EM.LIKE.CLEANING.FUNCTION(table1,table2,LG,15,13,ITERATIONS,FALSE)
- 	        decomposed.distributions.2=main2(table1,table2,LG,15,13,ITERATIONS,FALSE)
+            decomposed.distributions.1=main.EM.LIKE.CLEANING.FUNCTION(table1,table2,CHROM,15,13,ITERATIONS,FALSE)
+ 	        decomposed.distributions.2=main2(table1,table2,CHROM,15,13,ITERATIONS,FALSE)
             
             for(SEX in c("PATERNAL","MATERNAL")){
-                l[[paste0(LG,SEX,"CLEANEM")]] = decomposed.distributions.1[[SEX]]
-                l[[paste0(LG,SEX,"CLEANV")]] = decomposed.distributions.2[[SEX]]
+                l[[paste0(CHROM,SEX,"CLEANEM")]] = decomposed.distributions.1[[SEX]]
+                l[[paste0(CHROM,SEX,"CLEANV")]] = decomposed.distributions.2[[SEX]]
 			}
 		array.out=l		
 	    """
 	  )
-	  decomposedDistributionsTMP(LG) = Array2Folder(in=decomposedDistributions(LG).outArray,fileMode="@file@")
+	  decomposedDistributionsTMP(CHR) = Array2Folder(in=decomposedDistributions(CHR).outArray,fileMode="@file@")
 	}
 	
 	val decomposedDistributionsALLTMP = Array2Folder(in = decomposedDistributionsTMP,fileMode=".") 
 	val decomposedDistributionsALL = Folder2Array(folder1 = decomposedDistributionsALLTMP,filePattern="(.*).csv")
     
-    	val assignCorrectCoCount=REvaluate(
-	    table1 = concatenateRecombinationEventsHelsinki.table,
+    val assignCorrectCoCount=REvaluate(
+	    table1 = concatenateRecombinationEventsThreespine.table,
 	    table2 = chromosomeMetadata.table,
 	    var1 = decompositionFunctions,
 	    inArray = decomposedDistributionsALL,
 	    script="""
 	     source(var1) 	    
 	     table.out = data.frame()
-	     lgs = paste0("LG",seq(1,21))
+	     chrs = paste0("chr",as.roman(1:21))
 		 
-         for (LG in lgs) {
-            centromere = table2[table2$CHR==LG,"CENTROMERE"]
-		    lg.length = table2[table2$CHR==LG,"LENGTH"]
-		    shape = centromere/lg.length
-		    q.arm.length=table2[table2$CHR==LG,"QARMLENGTH"]
-		    p.arm.length=table2[table2$CHR==LG,"PARMLENGTH"]
-		    IN=subset(table1,CHR==LG)
+         for (CHROM in chrs) {
+            centromere = table2[table2$CHR==CHROM,"CENTROMERE"]
+		    chr.length = table2[table2$CHR==CHROM,"LENGTH"]
+		    shape = centromere/chr.length
+		    q.arm.length=table2[table2$CHR==CHROM,"QARMLENGTH"]
+		    p.arm.length=table2[table2$CHR==CHROM,"PARMLENGTH"]
+		    IN=subset(table1,CHR==CHROM)
 		    ###########
 		    for(SEX in c("PATERNAL","MATERNAL")){
 				max.count=max(IN[,paste0(SEX,"COUNT")])
 				mle.estimates = table2[,c("CHR",paste0(SEX,"n",0:5),paste0(SEX,"MLEp",0:9))]
 			    colnames(mle.estimates) = gsub(SEX,"",colnames(mle.estimates))
-			    interval.length=GENERATE.BINS(LG.LENGTH=lg.length,BY.LENGTH=FALSE,EVEN.LENGTH=TRUE,BY.NUMBER=TRUE,LENGTH=2000000,NUMBER=15)[2]
-            	no.bins=GENERATE.BINS(LG.LENGTH=lg.length,BY.LENGTH=FALSE,EVEN.LENGTH=TRUE,BY.NUMBER=TRUE,LENGTH=2000000,NUMBER=15)[1]
-                probability.table = GENERATE.PROBABILITY.TABLE(mle.estimates,LG,max.count)
+			    interval.length=GENERATE.BINS(LG.LENGTH=chr.length,BY.LENGTH=FALSE,EVEN.LENGTH=TRUE,BY.NUMBER=TRUE,LENGTH=2000000,NUMBER=15)[2]
+            	no.bins=GENERATE.BINS(LG.LENGTH=chr.length,BY.LENGTH=FALSE,EVEN.LENGTH=TRUE,BY.NUMBER=TRUE,LENGTH=2000000,NUMBER=15)[1]
+                probability.table = GENERATE.PROBABILITY.TABLE(mle.estimates,CHROM,max.count)
                 
-                f.priors.1=as.matrix(array[[paste0(LG,SEX,"CLEANEM")]])
-                f.priors.2=as.matrix(array[[paste0(LG,SEX,"CLEANV")]])
+                f.priors.1=as.matrix(array[[paste0(CHROM,SEX,"CLEANEM")]])
+                f.priors.2=as.matrix(array[[paste0(CHROM,SEX,"CLEANV")]])
             	sites.all = as.numeric(unlist(strsplit(IN[,paste0(SEX,"SITES")],split=",")))
 	            sites.all = sites.all[is.na(sites.all)==F]
                 if(shape<=0.5){
@@ -802,8 +867,6 @@ object ninepinedRecombination {
             IN=cbind(IN,d[,paste0(c("TRUECOCOUNT.EM","PROBTRUECOCOUNT.EM","PRIORTRUECOCOUNT.EM","TRUECOCOUNT.V","PROBTRUECOCOUNT.V","PRIORTRUECOCOUNT.V","ParmCOUNT","QarmCOUNT"),SEX)])
             
             }
-         
-            
          table.out=rbind(table.out,IN)   
 		} 	  	
 	    """
@@ -816,10 +879,6 @@ object ninepinedRecombination {
 	    script="""
 	   #######################################
 	    table.out = data.frame()
-	     rm('optOut1')
-		 fig.dir <- get.output(cf, 'optOut1')
-	     dir.create(fig.dir, recursive=TRUE)
-	     setwd(fig.dir)
 		FORM.BIN.LENGTH = function(LG.LENGTH,BY.LENGTH,EVEN.LENGTH,BY.NUMBER,LENGTH,NUMBER){
 		
 		    if(BY.NUMBER & EVEN.LENGTH){
@@ -838,19 +897,21 @@ object ninepinedRecombination {
 		    return(INTERVAL.LENGTH)
 		}
 		####################################
+		
+		
+		 chrs = paste0("chr",as.roman(1:21))
+		 NO.BINS=15
 		distribution.plotting.table=data.frame()
 		OUT.LIST=list()
-		 lgs = paste0("LG",seq(1,21))
-		 NO.BINS=15
-		 
-		 for (LG in lgs) {
-		    LG.length = table2[table2$CHR == LG,"LENGTH"]
-		    BIN.LENGTH=FORM.BIN.LENGTH(LG.LENGTH=LG.length,BY.LENGTH=FALSE,EVEN.LENGTH=TRUE,BY.NUMBER=TRUE,LENGTH=0,NUMBER=NO.BINS)
-		    CENTROMERE = table2[table2$CHR==LG,"CENTROMERE"]
+		
+		 for (CHROM in chrs) {
+		    CHR.length = table2[table2$CHR == CHROM,"LENGTH"]
+		    BIN.LENGTH=FORM.BIN.LENGTH(LG.LENGTH=CHR.length,BY.LENGTH=FALSE,EVEN.LENGTH=TRUE,BY.NUMBER=TRUE,LENGTH=0,NUMBER=NO.BINS)
+		    CENTROMERE = table2[table2$CHR==CHROM,"CENTROMERE"]
 		    CENTROMERE.BIN = floor(CENTROMERE/BIN.LENGTH)
-		    BINS=1:(floor(LG.length/BIN.LENGTH)+1)
+		    BINS=1:(floor(CHR.length/BIN.LENGTH)+1)
 		    		    		    
-		    d=subset(table1,CHR==LG)    
+		    d=subset(table1,CHR==CHROM)    
 	        
 	        p.sites.all=as.numeric(unlist(strsplit(d$PATERNALSITES,split=",")))
 	        p.sites.all=p.sites.all[is.na(p.sites.all)==F]
@@ -891,54 +952,70 @@ object ninepinedRecombination {
 	           raw.tmp=as.data.frame(d[,c(paste0(SEX,c("COUNT","SITE1","SITE2","SITE3","SITE4","SITE5")),paste0(c("TRUECOCOUNT.V","TRUECOCOUNT.EM"),SEX))])
 	           colnames(raw.tmp)=c("COUNT","SITE1","SITE2","SITE3","SITE4","SITE5","TRUECOCOUNT.V","TRUECOCOUNT.EM")
 	           COLORS=c("blue","red","green3","brown","orange")
-		       
-	           clean = array[[paste0(LG,SEX,"CLEANEM")]]
-		       
-	           clean = array[[paste0(LG,SEX,"CLEANV")]]
-		       
-	           
-		   }
+		       for(i in 1:5){
+		           raw = subset(raw.tmp,COUNT==i)
+		           raw.for.plotting = as.data.frame(table(factor(c(raw$SITE1,raw$SITE2,raw$SITE3,raw$SITE4,raw$SITE5),levels=BINS))/sum(table(factor(c(raw$SITE1,raw$SITE2,raw$SITE3,raw$SITE4,raw$SITE5),levels=BINS))))
+		       }
+	           clean = array[[paste0(CHROM,SEX,"CLEANEM")]]
+		       for(i in 2:6){
+		           if(p[p$CHR==CHROM,paste0("MLEp",i-1)]==0){next}
+		           raw = subset(raw.tmp,COUNT==i-1)
+		           raw.for.plotting = as.data.frame(table(factor(c(raw$SITE1,raw$SITE2,raw$SITE3,raw$SITE4,raw$SITE5),levels=BINS))/sum(table(factor(c(raw$SITE1,raw$SITE2,raw$SITE3,raw$SITE4,raw$SITE5),levels=BINS))))
+		       }
+	           clean = array[[paste0(CHROM,SEX,"CLEANV")]]
+		       for(i in 2:6){
+		           if(p[p$CHR==CHROM,paste0("MLEp",i-1)]==0){next}
+		           raw = subset(raw.tmp,COUNT==i-1)
+		           raw.for.plotting = as.data.frame(table(factor(c(raw$SITE1,raw$SITE2,raw$SITE3,raw$SITE4,raw$SITE5),levels=BINS))/sum(table(factor(c(raw$SITE1,raw$SITE2,raw$SITE3,raw$SITE4,raw$SITE5),levels=BINS))))
+		       }
+	           for(i in 1:5){
+		           clean = subset(raw.tmp,TRUECOCOUNT.EM==i)
+		           clean.for.plotting = as.data.frame(table(factor(c(clean$SITE1,clean$SITE2,clean$SITE3,clean$SITE4,clean$SITE5),levels=BINS))/sum(table(factor(c(clean$SITE1,clean$SITE2,clean$SITE3,clean$SITE4,clean$SITE5),levels=BINS))))
+		           raw = subset(raw.tmp,COUNT==i)
+		           raw.for.plotting = as.data.frame(table(factor(c(raw$SITE1,raw$SITE2,raw$SITE3,raw$SITE4,raw$SITE5),levels=BINS))/sum(table(factor(c(raw$SITE1,raw$SITE2,raw$SITE3,raw$SITE4,raw$SITE5),levels=BINS))))
+		       }
+	           for(i in 1:5){
+		           clean = subset(raw.tmp,TRUECOCOUNT.V==i)
+		           clean.for.plotting = as.data.frame(table(factor(c(clean$SITE1,clean$SITE2,clean$SITE3,clean$SITE4,clean$SITE5),levels=BINS))/sum(table(factor(c(clean$SITE1,clean$SITE2,clean$SITE3,clean$SITE4,clean$SITE5),levels=BINS))))
+		           raw = subset(raw.tmp,COUNT==i)
+		           raw.for.plotting = as.data.frame(table(factor(c(raw$SITE1,raw$SITE2,raw$SITE3,raw$SITE4,raw$SITE5),levels=BINS))/sum(table(factor(c(raw$SITE1,raw$SITE2,raw$SITE3,raw$SITE4,raw$SITE5),levels=BINS))))
+		       }
+	       }
 		   p=table2[,c("CHR",paste0("MATERNAL","n",0:5),paste0("MATERNAL","MLEp",0:9))]
 	       colnames(p) = gsub("MATERNAL","",colnames(p))
-	       clean.paternal = array[[paste0(LG,"PATERNALCLEANEM")]]
-		   paternal.total = apply(clean.paternal*as.numeric(p[p$CHR==LG,paste0("MLEp",seq(0,9))]),2,sum)/sum(apply(clean.paternal*as.numeric(p[p$CHR==LG,paste0("MLEp",seq(0,9))]),2,sum))
-		   paternal.total.E=sum(paternal.total*seq(1,length(paternal.total)))
+	       clean.paternal = array[[paste0(CHROM,"PATERNALCLEANEM")]]
+		   paternal.total = apply(clean.paternal*as.numeric(p[p$CHR==CHROM,paste0("MLEp",seq(0,9))]),2,sum)/sum(apply(clean.paternal*as.numeric(p[p$CHR==CHROM,paste0("MLEp",seq(0,9))]),2,sum))
 		   raw.tmp=as.data.frame(d[,c(paste0("PATERNAL",c("COUNT","SITE1","SITE2","SITE3","SITE4","SITE5")),paste0(c("TRUECOCOUNT.V","TRUECOCOUNT.EM"),"PATERNAL"))])
 	       colnames(raw.tmp)=c("COUNT","SITE1","SITE2","SITE3","SITE4","SITE5","TRUECOCOUNT.V","TRUECOCOUNT.EM")
 	       raw.paternal=as.data.frame(table(factor(c(raw.tmp$SITE1,raw.tmp$SITE2,raw.tmp$SITE3,raw.tmp$SITE4,raw.tmp$SITE5),levels=BINS))/sum(table(factor(c(raw.tmp$SITE1,raw.tmp$SITE2,raw.tmp$SITE3,raw.tmp$SITE4,raw.tmp$SITE5),levels=BINS))))
 		   
 		   p=table2[,c("CHR",paste0("PATERNAL","n",0:5),paste0("PATERNAL","MLEp",0:9))]
 	       colnames(p) = gsub("PATERNAL","",colnames(p))
-	       clean.maternal = array[[paste0(LG,"MATERNALCLEANEM")]]
-		   maternal.total = apply(clean.maternal*as.numeric(p[p$CHR==LG,paste0("MLEp",seq(0,9))]),2,sum)/sum(apply(clean.maternal*as.numeric(p[p$CHR==LG,paste0("MLEp",seq(0,9))]),2,sum))
-		   maternal.total.E=sum(maternal.total*seq(1,length(maternal.total)))
+	       clean.maternal = array[[paste0(CHROM,"MATERNALCLEANEM")]]
+		   maternal.total = apply(clean.maternal*as.numeric(p[p$CHR==CHROM,paste0("MLEp",seq(0,9))]),2,sum)/sum(apply(clean.maternal*as.numeric(p[p$CHR==CHROM,paste0("MLEp",seq(0,9))]),2,sum))
 		   raw.tmp=as.data.frame(d[,c(paste0("MATERNAL",c("COUNT","SITE1","SITE2","SITE3","SITE4","SITE5")),paste0(c("TRUECOCOUNT.V","TRUECOCOUNT.EM"),"MATERNAL"))])
 	       colnames(raw.tmp)=c("COUNT","SITE1","SITE2","SITE3","SITE4","SITE5","TRUECOCOUNT.V","TRUECOCOUNT.EM")
 	       raw.maternal=as.data.frame(table(factor(c(raw.tmp$SITE1,raw.tmp$SITE2,raw.tmp$SITE3,raw.tmp$SITE4,raw.tmp$SITE5),levels=BINS))/sum(table(factor(c(raw.tmp$SITE1,raw.tmp$SITE2,raw.tmp$SITE3,raw.tmp$SITE4,raw.tmp$SITE5),levels=BINS))))
 		   
-   		   distribution.plotting.table=rbind(distribution.plotting.table,data.frame(CHR=LG,BIN=1:NO.BINS,DENSITY=c(paternal.total,raw.paternal[,2],maternal.total,raw.maternal[,2]),SEX=rep(c("PATERNAL","MATERNAL"),each=2*NO.BINS),
+   		   distribution.plotting.table=rbind(distribution.plotting.table,data.frame(CHR=CHROM,BIN=1:NO.BINS,DENSITY=c(paternal.total,raw.paternal[,2],maternal.total,raw.maternal[,2]),SEX=rep(c("PATERNAL","MATERNAL"),each=2*NO.BINS),
    		   TYPE=rep(c("PREDICTED","EMPIRICAL","PREDICTED","EMPIRICAL"),each=NO.BINS),COMPARISON=rep(c("COMP1","COMP2","COMP2","COMP1"),each=NO.BINS),
-   		   EXPECTED=rep(c(sum(paternal.total*seq(1,NO.BINS)),sum(raw.paternal[,2]*seq(1,NO.BINS)),sum(maternal.total*seq(1,NO.BINS)),sum(raw.maternal[,2]*seq(1,NO.BINS))),each=NO.BINS),
-   		   VARIANCE=rep(c(sum(((seq(1,NO.BINS)-sum(paternal.total*seq(1,NO.BINS)))^2)*paternal.total),sum(((seq(1,NO.BINS)-sum(raw.paternal[,2]*seq(1,NO.BINS)))^2)*raw.paternal[,2]),
+		   EXPECTED=rep(c(sum(paternal.total*seq(1,NO.BINS)),sum(raw.paternal[,2]*seq(1,NO.BINS)),sum(maternal.total*seq(1,NO.BINS)),sum(raw.maternal[,2]*seq(1,NO.BINS))),each=NO.BINS),
+		   VARIANCE=rep(c(sum(((seq(1,NO.BINS)-sum(paternal.total*seq(1,NO.BINS)))^2)*paternal.total),sum(((seq(1,NO.BINS)-sum(raw.paternal[,2]*seq(1,NO.BINS)))^2)*raw.paternal[,2]),
 		   sum(((seq(1,NO.BINS)-sum(maternal.total*seq(1,NO.BINS)))^2)*maternal.total),sum(((seq(1,NO.BINS)-sum(raw.maternal[,2]*seq(1,NO.BINS)))^2)*raw.maternal[,2])),each=NO.BINS)))
 
-
-   		   
 		   #######################################
 		   p=table2[,c("CHR",paste0("MATERNAL","n",0:5),paste0("MATERNAL","MLEp",0:9))]
 	       colnames(p) = gsub("MATERNAL","",colnames(p))
-	       clean = array[[paste0(LG,"PATERNALCLEANV")]]
-		   paternal.total = apply(clean*as.numeric(p[p$CHR==LG,paste0("MLEp",seq(0,9))]),2,sum)/sum(apply(clean*as.numeric(p[p$CHR==LG,paste0("MLEp",seq(0,9))]),2,sum))
-		   paternal.total.E=sum(paternal.total*seq(1,length(paternal.total)))
+	       clean = array[[paste0(CHROM,"PATERNALCLEANV")]]
+		   paternal.total = apply(clean*as.numeric(p[p$CHR==CHROM,paste0("MLEp",seq(0,9))]),2,sum)/sum(apply(clean*as.numeric(p[p$CHR==CHROM,paste0("MLEp",seq(0,9))]),2,sum))
 		   raw.tmp=as.data.frame(d[,c(paste0("PATERNAL",c("COUNT","SITE1","SITE2","SITE3","SITE4","SITE5")),paste0(c("TRUECOCOUNT.V","TRUECOCOUNT.EM"),"PATERNAL"))])
 	       colnames(raw.tmp)=c("COUNT","SITE1","SITE2","SITE3","SITE4","SITE5","TRUECOCOUNT.V","TRUECOCOUNT.EM")
 	       raw.paternal=as.data.frame(table(factor(c(raw.tmp$SITE1,raw.tmp$SITE2,raw.tmp$SITE3,raw.tmp$SITE4,raw.tmp$SITE5),levels=BINS))/sum(table(factor(c(raw.tmp$SITE1,raw.tmp$SITE2,raw.tmp$SITE3,raw.tmp$SITE4,raw.tmp$SITE5),levels=BINS))))
 		   
 		   p=table2[,c("CHR",paste0("PATERNAL","n",0:5),paste0("PATERNAL","MLEp",0:9))]
 	       colnames(p) = gsub("PATERNAL","",colnames(p))
-	       clean = array[[paste0(LG,"MATERNALCLEANV")]]
-		   maternal.total = apply(clean*as.numeric(p[p$CHR==LG,paste0("MLEp",seq(0,9))]),2,sum)/sum(apply(clean*as.numeric(p[p$CHR==LG,paste0("MLEp",seq(0,9))]),2,sum))
-		   maternal.total.E=sum(maternal.total*seq(1,length(maternal.total)))
+	       clean = array[[paste0(CHROM,"MATERNALCLEANV")]]
+		   maternal.total = apply(clean*as.numeric(p[p$CHR==CHROM,paste0("MLEp",seq(0,9))]),2,sum)/sum(apply(clean*as.numeric(p[p$CHR==CHROM,paste0("MLEp",seq(0,9))]),2,sum))
 		   raw.tmp=as.data.frame(d[,c(paste0("MATERNAL",c("COUNT","SITE1","SITE2","SITE3","SITE4","SITE5")),paste0(c("TRUECOCOUNT.V","TRUECOCOUNT.EM"),"MATERNAL"))])
 	       colnames(raw.tmp)=c("COUNT","SITE1","SITE2","SITE3","SITE4","SITE5","TRUECOCOUNT.V","TRUECOCOUNT.EM")
 	       raw.maternal=as.data.frame(table(factor(c(raw.tmp$SITE1,raw.tmp$SITE2,raw.tmp$SITE3,raw.tmp$SITE4,raw.tmp$SITE5),levels=BINS))/sum(table(factor(c(raw.tmp$SITE1,raw.tmp$SITE2,raw.tmp$SITE3,raw.tmp$SITE4,raw.tmp$SITE5),levels=BINS))))
@@ -946,108 +1023,104 @@ object ninepinedRecombination {
 		   simulated.clean.maternal=sample(seq(1,NO.BINS),prob=maternal.total,size=500,replace=T)
 		   simulated.clean.paternal=sample(seq(1,NO.BINS),prob=paternal.total,size=500,replace=T)
 		   
-		  
+		   if(nrow(d[d$TRUECOCOUNT.EMMATERNAL==1,])>5){
+		  }
+	      		   
 	   }
-	   OUT.LIST[["empiricalAndInferredDistributions"]]=distribution.plotting.table
+	  OUT.LIST[["empiricalAndInferredDistributions"]]=distribution.plotting.table
       array.out=OUT.LIST
-    
     """
     
     )
 
       val plots=REvaluate(
-      table1=concatenateRecombinationEventsHelsinki.table,
+      table1=concatenateRecombinationEventsThreespine.table,
       table2=chromosomeMetadata.table,
    	  table3=assignCorrectCoCount.table,
    	  inArray=fitModels.outArray,
       script="""
-          ##################
-	      table.out=data.frame()
-	      rm('optOut1')
-		  fig.dir <- get.output(cf, 'optOut1')
-		  dir.create(fig.dir, recursive=TRUE)
-		  setwd(fig.dir)
-		  ##################			
-		  lgs = paste0("LG",seq(1,21))
+          table.out=data.frame()
+	      ##################			
+		  chrs = paste0("chr",as.roman(1:21))
 		  fig.index=0
           library(lme4)
           library(glmmTMB)
           OUT.LIST=list() 
           
 		  ##################
-          COLLECT.SHAPE.PLOTS = data.frame()
+		  linear.model.table=data.frame(COUNT=c(table2$MEANCOCOUNTPATERNAL,table2$MEANCOCOUNTMATERNAL),CHR=table2$CHR,LENGTH=table2$LENGTH,SEX=as.factor(rep(c(1,2),each=21)))
+		  COLLECT.SHAPE.PLOTS = data.frame()
           COLLECT.DISTRIBUTION.PLOTS=data.frame()
-          for(LG in lgs){
-              tmp=table1[table1$CHR==LG,]
+          for(CHROM in chrs){
+              tmp=table1[table1$CHR==CHROM,]
               BIN.COUNT=25
-              BIN.SIZE=ceiling(table2[table2$CHR==LG,"LENGTH"]/BIN.COUNT)
-              YLIM=c(0,0.3)
+              BIN.SIZE=ceiling(table2[table2$CHR==CHROM,"LENGTH"]/BIN.COUNT)
               paternal.co=as.numeric(prop.table(table(factor(ceiling(as.numeric(unlist(strsplit(tmp[tmp$PATERNALCOUNT>0,"PATERNALSITES"],split=",")))/BIN.SIZE),levels=1:BIN.COUNT))))
               maternal.co=as.numeric(prop.table(table(factor(ceiling(as.numeric(unlist(strsplit(tmp[tmp$MATERNALCOUNT>0,"MATERNALSITES"],split=",")))/BIN.SIZE),levels=1:BIN.COUNT))))
-              COLLECT.DISTRIBUTION.PLOTS=rbind(COLLECT.DISTRIBUTION.PLOTS,data.frame(BIN=1:BIN.COUNT,DENSITY=c(paternal.co,maternal.co),SEX=rep(c("PATERNAL","MATERNAL"),each=BIN.COUNT),CO=1,CO.GROUP=1,CHR=LG))
+              COLLECT.DISTRIBUTION.PLOTS=rbind(COLLECT.DISTRIBUTION.PLOTS,data.frame(BIN=1:BIN.COUNT,DENSITY=c(paternal.co,maternal.co),SEX=rep(c("PATERNAL","MATERNAL"),each=BIN.COUNT),CO=1,CO.GROUP=1,CHR=CHROM))
+          
               paternal.co.1=as.numeric(prop.table(table(factor(ceiling(as.numeric(tmp[tmp$PATERNALCOUNT==2,"PATERNALSITE1"])/BIN.SIZE),levels=1:BIN.COUNT))))
               paternal.co.2=as.numeric(prop.table(table(factor(ceiling(as.numeric(tmp[tmp$PATERNALCOUNT==2,"PATERNALSITE2"])/BIN.SIZE),levels=1:BIN.COUNT))))
               maternal.co.1=as.numeric(prop.table(table(factor(ceiling(as.numeric(tmp[tmp$MATERNALCOUNT==2,"MATERNALSITE1"])/BIN.SIZE),levels=1:BIN.COUNT))))
               maternal.co.2=as.numeric(prop.table(table(factor(ceiling(as.numeric(tmp[tmp$MATERNALCOUNT==2,"MATERNALSITE2"])/BIN.SIZE),levels=1:BIN.COUNT))))
-              COLLECT.DISTRIBUTION.PLOTS=rbind(COLLECT.DISTRIBUTION.PLOTS,data.frame(BIN=1:BIN.COUNT,DENSITY=c(paternal.co.1,paternal.co.2,maternal.co.1,maternal.co.2),SEX=rep(c("PATERNAL","MATERNAL"),each=2*BIN.COUNT),CO=rep(c(1,2,1,2),each=BIN.COUNT),CO.GROUP=2,CHR=LG))
+              COLLECT.DISTRIBUTION.PLOTS=rbind(COLLECT.DISTRIBUTION.PLOTS,data.frame(BIN=1:BIN.COUNT,DENSITY=c(paternal.co.1,paternal.co.2,maternal.co.1,maternal.co.2),SEX=rep(c("PATERNAL","MATERNAL"),each=2*BIN.COUNT),CO=rep(c(1,2,1,2),each=BIN.COUNT),CO.GROUP=2,CHR=CHROM))
           
               maternal.co.1=as.numeric(prop.table(table(factor(ceiling(as.numeric(tmp[tmp$MATERNALCOUNT==3,"MATERNALSITE1"])/BIN.SIZE),levels=1:BIN.COUNT))))
               maternal.co.2=as.numeric(prop.table(table(factor(ceiling(as.numeric(tmp[tmp$MATERNALCOUNT==3,"MATERNALSITE2"])/BIN.SIZE),levels=1:BIN.COUNT))))
               maternal.co.3=as.numeric(prop.table(table(factor(ceiling(as.numeric(tmp[tmp$MATERNALCOUNT==3,"MATERNALSITE3"])/BIN.SIZE),levels=1:BIN.COUNT))))
-              COLLECT.DISTRIBUTION.PLOTS=rbind(COLLECT.DISTRIBUTION.PLOTS,data.frame(BIN=1:BIN.COUNT,DENSITY=c(maternal.co.1,maternal.co.2,maternal.co.3),SEX="MATERNAL",CO=rep(c(1,2,3),each=BIN.COUNT),CO.GROUP=3,CHR=LG))
-              
+              COLLECT.DISTRIBUTION.PLOTS=rbind(COLLECT.DISTRIBUTION.PLOTS,data.frame(BIN=1:BIN.COUNT,DENSITY=c(maternal.co.1,maternal.co.2,maternal.co.3),SEX="MATERNAL",CO=rep(c(1,2,3),each=BIN.COUNT),CO.GROUP=3,CHR=CHROM))
 	      }
 	      BIN.COUNT=25
-	      YLIM=c(0,0.25)    
 	      table2$TYPE="TELOCENTRIC"
-	      for(LG in lgs){
-	          q.arm.length=table2[table2$CHR==LG,"QARMLENGTH"]
-	          p.arm.length=table2[table2$CHR==LG,"PARMLENGTH"]
+	      for(CHROM in chrs){
+	          q.arm.length=table2[table2$CHR==CHROM,"QARMLENGTH"]
+	          p.arm.length=table2[table2$CHR==CHROM,"PARMLENGTH"]
 	          ratio=q.arm.length/p.arm.length
 	          if(ratio<1.7){
-	              table2[table2$CHR==LG,"TYPE"]="METACENTRIC"
+	              table2[table2$CHR==CHROM,"TYPE"]="METACENTRIC"
 	          } else if(ratio<3){
-	              table2[table2$CHR==LG,"TYPE"]="SUBMETACENTRIC"
+	              table2[table2$CHR==CHROM,"TYPE"]="SUBMETACENTRIC"
 	          } else if(ratio<7){
-	              table2[table2$CHR==LG,"TYPE"]="SUBTELOCENTRIC"
+	              table2[table2$CHR==CHROM,"TYPE"]="SUBTELOCENTRIC"
 	          } else if(ratio<80){
-	              table2[table2$CHR==LG,"TYPE"]="ACROCENTRIC"
-	          }
-	               
+	              table2[table2$CHR==CHROM,"TYPE"]="ACROCENTRIC"
+	          }    
 	      }
 	      for(i in paste0(c("META","SUBMETA","SUBTELO","ACRO","TELO"),"CENTRIC")){
 	      for(SEX in c("MATERNAL","PATERNAL")){
 	          if(SEX=="MATERNAL"){COL=rgb(1,0,0,0.5)}else{COL=rgb(0,0,1,0.5)}
 	          all=matrix(ncol=BIN.COUNT)
-		      for(LG in table2[table2$TYPE==i,"CHR"]){
-			      tmp=table1[table1$CHR==LG,]
-		          lg.length=table2[table2$CHR==LG,"LENGTH"]
-	              centromere=table2[table2$CHR==LG,"CENTROMERE"]
+	          for(CHROM in table2[table2$TYPE==i,"CHR"]){
+			      tmp=table1[table1$CHR==CHROM,]
+		          lg.length=table2[table2$CHR==CHROM,"LENGTH"]
+	              centromere=table2[table2$CHR==CHROM,"CENTROMERE"]
 		          shape=centromere/lg.length
 		          BIN.SIZE=ceiling(lg.length/BIN.COUNT)
 		          co=as.numeric(prop.table(table(factor(ceiling(as.numeric(unlist(strsplit(tmp[tmp[[paste0(SEX,"COUNT")]]>0,paste0(SEX,"SITES")],split=",")))/BIN.SIZE),levels=1:BIN.COUNT))))
 		          if(shape > 0.5){co=rev(co)}
 	              all=rbind(all,co)
-	              COLLECT.SHAPE.PLOTS=rbind(COLLECT.SHAPE.PLOTS,data.frame(co,SEX,CHR=LG,SHAPE=i,QARMCOUNT="all",BIN=1:BIN.COUNT,COLOR=SEX))
+	              COLLECT.SHAPE.PLOTS=rbind(COLLECT.SHAPE.PLOTS,data.frame(co,SEX,CHR=CHROM,SHAPE=i,QARMCOUNT="all",BIN=1:BIN.COUNT,COLOR=SEX))
 		      }
-		      COLLECT.SHAPE.PLOTS=rbind(COLLECT.SHAPE.PLOTS,data.frame(co=apply(all[-1,],2,median),SEX,CHR="MEDIAN",SHAPE=i,QARMCOUNT="all",BIN=1:BIN.COUNT,COLOR="MEDIAN"))
+		      if(nrow(all)>2){
+		          COLLECT.SHAPE.PLOTS=rbind(COLLECT.SHAPE.PLOTS,data.frame(co=apply(all[-1,],2,median),SEX,CHR="MEDIAN",SHAPE=i,QARMCOUNT="all",BIN=1:BIN.COUNT,COLOR="MEDIAN"))
+		          }
 		  }
 		  }
 		  
 		  for(i in paste0(c("SUBMETA","SUBTELO","ACRO","TELO"),"CENTRIC")){
 		      for(j in 2:3){
 		          all=matrix(ncol=BIN.COUNT)
-		          for(LG in table2[table2$TYPE==i,"CHR"]){
-				      tmp=table3[table3$CHR==LG,]
-			          lg.length=table2[table2$CHR==LG,"LENGTH"]
-		              centromere=table2[table2$CHR==LG,"CENTROMERE"]
+		          for(CHROM in table2[table2$TYPE==i,"CHR"]){
+				      tmp=table3[table3$CHR==CHROM,]
+			          lg.length=table2[table2$CHR==CHROM,"LENGTH"]
+		              centromere=table2[table2$CHR==CHROM,"CENTROMERE"]
 			          shape=centromere/lg.length
 			          BIN.SIZE=ceiling(lg.length/BIN.COUNT)
-			          maternal.co=as.numeric(prop.table(table(factor(ceiling(as.numeric(unlist(strsplit(tmp[tmp$QarmCOUNTMATERNAL==j,"MATERNALSITES"],split=",")))/BIN.SIZE),levels=1:BIN.COUNT))))
-		              if(nrow(tmp[tmp$QarmCOUNTMATERNAL==j,]) > 20){ ##Previous version: if(nrow(tmp[tmp$MATERNALCOUNT==j,])/j > 10)
+			          maternal.co=as.numeric(prop.table(table(factor(ceiling(as.numeric(unlist(strsplit(tmp[tmp$QarmCOUNTMATERNAL==j ,"MATERNALSITES"],split=",")))/BIN.SIZE),levels=1:BIN.COUNT))))
+		              if(nrow(tmp[tmp$QarmCOUNTMATERNAL==j,]) > 20){
 			              if(shape > 0.5){paternal.co=rev(paternal.co);maternal.co=rev(maternal.co)}
 			              all=rbind(all,maternal.co)
-			              COLLECT.SHAPE.PLOTS=rbind(COLLECT.SHAPE.PLOTS,data.frame(co=maternal.co,SEX="MATERNAL",CHR=LG,SHAPE=i,QARMCOUNT=as.character(j),BIN=1:BIN.COUNT,COLOR="MATERNAL"))
+			              COLLECT.SHAPE.PLOTS=rbind(COLLECT.SHAPE.PLOTS,data.frame(co=maternal.co,SEX="MATERNAL",CHR=CHROM,SHAPE=i,QARMCOUNT=as.character(j),BIN=1:BIN.COUNT,COLOR="MATERNAL"))
 					  }    
 			      }
 			      if(nrow(all)>2){
@@ -1056,33 +1129,34 @@ object ninepinedRecombination {
 			  }
 		  }
 		  BIN.COUNT=25
-	      for(LG in table2[table2$TYPE=="ACROCENTRIC","CHR"]){
-		      tmp=table3[table3$CHR==LG,]
-	          lg.length=table2[table2$CHR==LG,"QARMLENGTH"]
-              centromere=table2[table2$CHR==LG,"CENTROMERE"]
-	          shape=centromere/table2[table2$CHR==LG,"LENGTH"]
+		  for(CHROM in table2[table2$TYPE=="ACROCENTRIC","CHR"]){
+		      tmp=table3[table3$CHR==CHROM,]
+	          lg.length=table2[table2$CHR==CHROM,"QARMLENGTH"]
+              centromere=table2[table2$CHR==CHROM,"CENTROMERE"]
+	          shape=centromere/table2[table2$CHR==CHROM,"LENGTH"]
 	          BIN.SIZE=ceiling(lg.length/BIN.COUNT)
 	          if(shape<=0.5){
 		          maternal.co=as.numeric(unlist(strsplit(tmp[tmp$QarmCOUNTMATERNAL==2,"MATERNALSITES"],split=",")))
 		          maternal.q=maternal.co[which(maternal.co>centromere)]
 		          maternal.freq=as.numeric(prop.table(table(factor(ceiling((maternal.q-centromere)/BIN.SIZE),levels=1:BIN.COUNT))))
-		        } else{
+	          } else{
 	              maternal.co=as.numeric(unlist(strsplit(tmp[tmp$QarmCOUNTMATERNAL==2,"MATERNALSITES"],split=",")))
 		          maternal.q=maternal.co[which(maternal.co<centromere)]
 		          maternal.freq=rev(as.numeric(prop.table(table(factor(ceiling((centromere-maternal.q)/BIN.SIZE),levels=1:BIN.COUNT)))))
-		        }
+		      }
 		      
 		  }    
           ##############################
           ##DISTANCE TO CENTEROMERE
            lme.model.table=data.frame()
-           for (LG in lgs[-12]) {
-                d=subset(table3,CHR==LG)
+           for (CHROM in chrs[-19]) {
+                d=subset(table3,CHR==CHROM)
                 d$QARM1stPaternalPERQARMLENGTH=100
                 d$QARM1stMaternalPERQARMLENGTH=100
-                centromere=table2[table2$CHR==LG,"CENTROMERE"]
-                q.arm.length=table2[table2$CHR==LG,"QARMLENGTH"]
-                shape=table2[table2$CHR==LG,"CENTROMERE"]/table2[table2$CHR==LG,"LENGTH"]
+                centromere=table2[table2$CHR==CHROM,"CENTROMERE"]
+                q.arm.length=table2[table2$CHR==CHROM,"QARMLENGTH"]
+                chr.length=table2[table2$CHR==CHROM,"LENGTH"]
+                shape=table2[table2$CHR==CHROM,"CENTROMERE"]/chr.length
                 if(shape>0.5){
 	                d$MATERNALSITE1 = sapply(strsplit(d$MATERNALSITES,split=","),function(x) as.numeric(x)[order(as.numeric(x),decreasing=T)][1])
 			        d$MATERNALSITE2 = sapply(strsplit(d$MATERNALSITES,split=","),function(x) as.numeric(x)[order(as.numeric(x),decreasing=T)][2])
@@ -1095,8 +1169,9 @@ object ninepinedRecombination {
 		            d$PATERNALSITE4 = sapply(strsplit(d$PATERNALSITES,split=","),function(x) as.numeric(x)[order(as.numeric(x),decreasing=T)][4])
 		            d$PATERNALSITE5 = sapply(strsplit(d$PATERNALSITES,split=","),function(x) as.numeric(x)[order(as.numeric(x),decreasing=T)][5])
                 }
-				tmp.maternal=subset(d,CHR==LG & PRIORTRUECOCOUNT.EMMATERNAL>0 & QarmCOUNTMATERNAL>0)
-				tmp.paternal=subset(d,CHR==LG & PRIORTRUECOCOUNT.EMPATERNAL>0 & QarmCOUNTPATERNAL>0)
+				tmp.maternal=subset(d,CHR==CHROM & PRIORTRUECOCOUNT.EMMATERNAL>0 & QarmCOUNTMATERNAL>0)
+				tmp.paternal=subset(d,CHR==CHROM & PRIORTRUECOCOUNT.EMPATERNAL>0 & QarmCOUNTPATERNAL>0)
+				
 				for(i in (0:4)){
 				    tmp.maternal[tmp.maternal$ParmCOUNTMATERNAL==i,"QARM1stMaternalPERQARMLENGTH"]=abs((tmp.maternal[tmp.maternal$ParmCOUNTMATERNAL==i,paste0("MATERNALSITE",i+1)])-centromere)/q.arm.length
 				    tmp.paternal[tmp.paternal$ParmCOUNTPATERNAL==i,"QARM1stPaternalPERQARMLENGTH"]=abs((tmp.paternal[tmp.paternal$ParmCOUNTPATERNAL==i,paste0("PATERNALSITE",i+1)])-centromere)/q.arm.length
@@ -1106,47 +1181,39 @@ object ninepinedRecombination {
 				tmp.paternal=subset(tmp.paternal,select=c("CHR","OFFSPRING","QARM1stPaternalPERQARMLENGTH","QarmCOUNTPATERNAL"))
 				colnames(tmp.maternal)=c("CHR","OFFSPRING","DISTANCETOCENTROMERE","QARMCOCOUNT")
 				colnames(tmp.paternal)=c("CHR","OFFSPRING","DISTANCETOCENTROMERE","QARMCOCOUNT")
+				tmp.maternal$LENGTH=chr.length
+				tmp.paternal$LENGTH=chr.length
+				tmp.maternal$QARMLENGTH=q.arm.length
+				tmp.paternal$QARMLENGTH=q.arm.length
 				if(nrow(tmp.maternal)>0){tmp.maternal$SEX="MATERNAL"}
 				if(nrow(tmp.paternal)>0){tmp.paternal$SEX="PATERNAL"}
 				lme.model.table=rbind(lme.model.table,tmp.maternal)
 				lme.model.table=rbind(lme.model.table,tmp.paternal)
 		}
-			
-		
-		lme.model.table$fQARMCOCOUNT = as.factor(lme.model.table$QARMCOCOUNT)
+		lme.model.table$fQARMCOCOUNT =as.factor(lme.model.table$QARMCOCOUNT)
 		lme.model.table$fSEX = as.factor(lme.model.table$SEX)	
 		lme.model.table$fCHR = as.factor(lme.model.table$CHR)
-                lme.model.table$fOFFSPRING = as.factor(lme.model.table$OFFSPRING)
-                lme.model.table.2=subset(lme.model.table,!(CHR %in% paste0("LG",c(1,12,13,16,2,4,8,9)))) ### WHY THIS EXISTS??
+        lme.model.table$fOFFSPRING = as.factor(lme.model.table$OFFSPRING)
 		OUT.LIST[["lme.model.table"]]=lme.model.table
-        #########
-		median.distance.to.centromere.male=c()
-		median.distance.to.centromere.female=c()
-		
         OUT.LIST[["shapePlots"]] = COLLECT.SHAPE.PLOTS
         OUT.LIST[["distributionPlots"]] = COLLECT.DISTRIBUTION.PLOTS
         array.out=OUT.LIST
-      """
+        """
       )
 
 val blindToCentromere = REvaluate(
 	    table1 = assignCorrectCoCount.table,
 	    table2 = chromosomeMetadata.table,
 	    script="""
-		 library(lme4)
-		 library(xoi)
 		 table.out = data.frame()
-	     rm('optOut1')
-		 fig.dir <- get.output(cf, 'optOut1')
-	     dir.create(fig.dir, recursive=TRUE)
-	     setwd(fig.dir)
-				
-		 lgs = paste0("LG",seq(1,21))
-         OUT=data.frame()
+	     chrs = paste0("chr",as.roman(1:21))
+		 OUT=data.frame()
          
-         for (LG in lgs) {
-            meta.data=table2[table2$CHR==LG,]
+         for(CHROM in chrs) {
+            meta.data=table2[table2$CHR==CHROM,]
             for(SEX in c("MATERNAL","PATERNAL")){
+
+
             lg.length.cm.maternal=meta.data$CHRLENGTHCMMATERNAL
             lg.length.cm.paternal=meta.data$CHRLENGTHCMPATERNAL
             lg.length.cm=meta.data[[paste0("CHRLENGTHCM",SEX)]]
@@ -1158,7 +1225,8 @@ val blindToCentromere = REvaluate(
 		    p.arm.length=meta.data$PARMLENGTH
 		    q.arm.length.cm=meta.data[[paste0("QARMLENGTHCM",SEX)]]
 		    p.arm.length.cm=meta.data[[paste0("PARMLENGTHCM",SEX)]]
-		    d=subset(table1,CHR==LG)
+		    d=subset(table1,CHR==CHROM)
+
 		    if(shape>0.5){
 		        d$MATERNALSITE1 = sapply(strsplit(d$MATERNALSITES,split=","),function(x) as.numeric(x)[order(as.numeric(x),decreasing=T)][1])
 		        d$MATERNALSITE2 = sapply(strsplit(d$MATERNALSITES,split=","),function(x) as.numeric(x)[order(as.numeric(x),decreasing=T)][2])
@@ -1180,6 +1248,7 @@ val blindToCentromere = REvaluate(
 	        p.sites.all.cm=p.sites.all.cm[is.na(p.sites.all.cm)==F]
 	        m.sites.all.cm=as.numeric(unlist(strsplit(d$MATERNALSITESCM,split=",")))
 	        m.sites.all.cm=m.sites.all.cm[is.na(m.sites.all.cm)==F]
+
 	        if(shape<=0.5){
 	            p.sites.parm = p.sites.all[p.sites.all<=centromere]
 	            p.sites.qarm = p.sites.all[p.sites.all>centromere]
@@ -1191,7 +1260,6 @@ val blindToCentromere = REvaluate(
 	            m.sites.parm = m.sites.all[m.sites.all>=centromere]
 	            m.sites.qarm = m.sites.all[m.sites.all<centromere]
 	        }
-	        
 	       ############################################################ 
 	        if(SEX=="MATERNAL"){
 		        m=subset(d,MATERNALCOUNT==2 |MATERNALCOUNT==3|MATERNALCOUNT==4)
@@ -1202,13 +1270,17 @@ val blindToCentromere = REvaluate(
 			    }
 		    } else{
 		        m=subset(d,PATERNALCOUNT==2 |PATERNALCOUNT==3|PATERNALCOUNT==4)
+		        if(nrow(m)>0){
 		        m$ParmCOUNT=0
 		        for(i in 1:nrow(m)){
 		            m[i,"ParmCOUNT"]=length(which(unlist(strsplit(m[i,"PATERNALSITES"],split=",")) %in% p.sites.parm))
 		            m[i,"QarmCOUNT"]=length(which(unlist(strsplit(m[i,"PATERNALSITES"],split=",")) %in% p.sites.qarm))    	
 			    }
-		    }
+			}
+	    }
+		    if(nrow(m)==0){next} 
 		    if(nrow(subset(m,ParmCOUNT==1))<4){next} 
+		    
 		    CoClass=m[,paste0(SEX,"COUNT")]
 	        IND=m$OFFSPRING
 	        FEMALE=m$FEMALE
@@ -1250,26 +1322,25 @@ val blindToCentromere = REvaluate(
 	        PLOTTING.TABLE=data.frame(IND,FEMALE,CoClass,TRUECOCOUNT.V,CoCountInParm,CoCountInQarm,SITE1,SITE2,SITE1CM,SITE2CM,DIST1TOT,DIST1TOC,DIST2TOC,DIST3TOC,DIST4TOC,DIST1TO2CM,DIST1TOCCM,DIST2TOCCM,DIST3TOCCM,DIST4TOCCM,DIST1TO2CM,DIST1TOCPERLGLENGTH,
 	        DIST2TOCPERLGLENGTH,DIST3TOCPERLGLENGTH,DIST4TOCPERLGLENGTH,DIST1TO2PERLGLENGTH,DIST1TOCPERQARMLENGTH,DIST2TOCPERQARMLENGTH,DIST3TOCPERQARMLENGTH,DIST4TOCPERQARMLENGTH,DIST1TO2PERQARMLENGTH,DIST1TOCPERPARMLENGTH,DIST2TOCPERPARMLENGTH)
 	        
-	       
-		
-		if(LG!="LG12"){
+	        
+		if(CHROM!="chrXIX"){
 		OUT.tmp=subset(PLOTTING.TABLE,CoCountInParm==1)
 		if(nrow(OUT.tmp)>=1){
 			OUT.tmp$P.ARM.LENGTH=p.arm.length
 			OUT.tmp$Q.ARM.LENGTH=q.arm.length
-			OUT.tmp$LG.LENGTH=lg.length
-			OUT.tmp$LG=LG
+			OUT.tmp$CHR.LENGTH=lg.length
+			OUT.tmp$CHR=CHROM
 			OUT.tmp$P.ARM.LENGTH.CM=p.arm.length.cm
 			OUT.tmp$Q.ARM.LENGTH.CM=q.arm.length.cm
-			OUT.tmp$LG.LENGTH.CM=lg.length.cm
+			OUT.tmp$CHR.LENGTH.CM=lg.length.cm
 			OUT=rbind(OUT,OUT.tmp)
 		}
-	    table.out=OUT
 	}
 }
 }
+		
+	table.out=OUT
 	"""
-)
-    
-    
+	)
+      
 }
